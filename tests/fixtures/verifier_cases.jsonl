@@ -1,0 +1,10 @@
+{"raw": "Therefore \\boxed{42}.", "expected": "42"}
+{"raw": "\\boxed{\\frac{1}{2}}", "expected": "\\frac{1}{2}"}
+{"raw": "<final>{\"answer\":\"-3\"}</final>", "expected": "-3"}
+{"raw": "No final answer", "expected": null}
+{"raw": "The value is \\boxed{\\frac{1}{2}+1}.", "expected": "\\frac{1}{2}+1"}
+{"raw": "Thus $x=5$ and we are done.", "expected": "x=5"}
+{"raw": "We get $$x^2$$ at the end.", "expected": "x^2"}
+{"raw": "\\boxed{1} or \\boxed{2}", "expected": null}
+{"raw": "<final>{\"answer\":\"7\"}</final> or \\boxed{3}", "expected": "7"}
+{"raw": "   ", "expected": null}
