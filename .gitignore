@@ -1,2 +1,35 @@
+# virtual environments
+.venv/
+venv/
+
+# python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# local datasets, checkpoints and generated artifacts
+# (data/manifests and docs/results stay tracked)
+data/raw/
+data/processed/
+artifacts/
+*.parquet
+
+# secrets and environment files
+.env
+.env.*
+*.pem
+*.key
+
+# local tooling
 .worktrees/
 .superpowers/
+
+# OS
+.DS_Store

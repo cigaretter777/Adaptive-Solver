@@ -2,6 +2,27 @@
 
 > 基于langgraph状态机编排与 GRPO 强化学习的智能任务求解器
 
+## AdaptiveMath-RL 2.0 开发状态
+
+本仓库正在升级为 **AdaptiveMath-RL 2.0**：通过 SFT + Agentic GRPO 训练一个可自主选择直接推理 / Python / SymPy 工具的真实数学 Agent。V1 规则工作流与模拟 GRPO 代码保留在 `src/` 下作为原型基线，新功能写入 `src/adaptive_math`。
+
+实施文档：
+
+- [产品与技术设计报告](docs/superpowers/specs/2026-09-09-adaptive-math-rl-product-design.md)
+- [Master Roadmap](docs/superpowers/plans/2026-09-10-adaptive-math-rl-master.md)
+- [Foundation Plan](docs/superpowers/plans/2026-09-10-adaptive-math-rl-foundation.md)
+- [Agent Runtime Plan](docs/superpowers/plans/2026-09-10-adaptive-math-rl-agent-runtime.md)
+- [Training & Cloud Plan](docs/superpowers/plans/2026-09-10-adaptive-math-rl-training-cloud.md)
+- [Evaluation & Product Plan](docs/superpowers/plans/2026-09-10-adaptive-math-rl-evaluation-product.md)
+
+### 环境与测试
+
+- Python 3.12（由 uv 管理项目环境）
+- 安装依赖：`uv sync --dev`
+- 运行测试：`uv run pytest`
+- 代码检查：`uv run ruff check src tests`
+- 类型检查：`uv run mypy src/adaptive_math`
+
 ## 项目概述
 
     为解决通用大模型(如GPT-4、Qwen-3)在处理简单任务时性能过剩、在处理复杂任务时能力不足的问题,构建了一个融合动态路由、状态机编排与强化学习微调的智能 Agent 系统，旨在解决通用模型在复杂逻辑任务中成本高且准确率低的痛点。
