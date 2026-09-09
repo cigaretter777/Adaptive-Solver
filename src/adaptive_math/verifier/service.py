@@ -2,9 +2,12 @@
 
 ``verify_answer`` is the only public entry point. It dispatches on
 ``ReferenceAnswer.answer_type``, never raises for bad predictions or broken
-references, and sets reward to 1.0 only for CORRECT results.
+references, and sets reward to 1.0 only for CORRECT results. Symbolic
+(EXPRESSION) comparisons run in an isolated worker process.
 """
 
+import atexit
+import hashlib
 from collections.abc import Callable
 from enum import StrEnum
 
@@ -22,6 +25,7 @@ from adaptive_math.verifier.numeric import (
     parse_value,
     tolerance_fraction,
 )
+from adaptive_math.verifier.worker import SymbolicWorker
 
 
 class VerifierStatus(StrEnum):
@@ -43,27 +47,35 @@ class VerifierResult(BaseModel):
     details: dict[str, JSONValue] = Field(default_factory=dict)
 
 
-Verifier = Callable[[str, str, VerifierConfig], VerifierResult]
+Verifier = Callable[[str, str, VerifierConfig, str], VerifierResult]
 
 _DISPATCH: dict[AnswerType, Verifier] = {}
+
+_expression_worker: SymbolicWorker | None = None
 
 
 def verify_answer(
     prediction: str,
     reference: ReferenceAnswer,
     config: VerifierConfig | None = None,
+    *,
+    task_id: str | None = None,
 ) -> VerifierResult:
     """Verify a prediction against a reference and its acceptable forms.
 
     The primary reference value is always tried; an acceptable form can only
     upgrade the result to CORRECT. A broken reference is reported as
-    INVALID_REFERENCE instead of being masked by a boolean False.
+    INVALID_REFERENCE instead of being masked by a boolean False. task_id
+    seeds the symbolic numeric cross-check; it never changes typed verdicts.
     """
     config = config or VerifierConfig()
+    seed = task_id or hashlib.sha256(
+        f"{prediction}\x00{reference.value}".encode()
+    ).hexdigest()[:20]
     verify = _DISPATCH[reference.answer_type]
     best: VerifierResult | None = None
     for form in (reference.value, *reference.acceptable_forms):
-        result = verify(prediction, form, config)
+        result = verify(prediction, form, config, seed)
         if result.status is VerifierStatus.CORRECT:
             return result
         if result.status is VerifierStatus.INVALID_REFERENCE:
@@ -72,6 +84,14 @@ def verify_answer(
             best = result
     assert best is not None  # reference.value is always verified at least once
     return best
+
+
+def _get_expression_worker() -> SymbolicWorker:
+    global _expression_worker
+    if _expression_worker is None:
+        _expression_worker = SymbolicWorker()
+        atexit.register(_expression_worker.close)
+    return _expression_worker
 
 
 def _register(answer_type: AnswerType) -> Callable[[Verifier], Verifier]:
@@ -83,7 +103,7 @@ def _register(answer_type: AnswerType) -> Callable[[Verifier], Verifier]:
 
 
 @_register(AnswerType.INTEGER)
-def _verify_integer(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_integer(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_integer(ref_norm, config)
@@ -104,7 +124,7 @@ def _verify_integer(prediction: str, reference_value: str, config: VerifierConfi
 
 
 @_register(AnswerType.RATIONAL)
-def _verify_rational(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_rational(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_number(ref_norm, config)
@@ -119,7 +139,7 @@ def _verify_rational(prediction: str, reference_value: str, config: VerifierConf
 
 
 @_register(AnswerType.REAL)
-def _verify_real(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_real(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_number(ref_norm, config)
@@ -143,7 +163,7 @@ def _verify_real(prediction: str, reference_value: str, config: VerifierConfig) 
 
 
 @_register(AnswerType.SET)
-def _verify_set(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_set(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_value(ref_norm, config, depth=0)
@@ -166,7 +186,7 @@ def _verify_set(prediction: str, reference_value: str, config: VerifierConfig) -
 
 
 @_register(AnswerType.TUPLE)
-def _verify_tuple(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_tuple(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_value(ref_norm, config, depth=0)
@@ -189,7 +209,7 @@ def _verify_tuple(prediction: str, reference_value: str, config: VerifierConfig)
 
 
 @_register(AnswerType.INTERVAL)
-def _verify_interval(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
+def _verify_interval(prediction: str, reference_value: str, config: VerifierConfig, _task_id: str) -> VerifierResult:
     pred_norm = normalize_surface(prediction)
     ref_norm = normalize_surface(reference_value)
     r_ref = parse_interval(ref_norm, config)
@@ -204,17 +224,12 @@ def _verify_interval(prediction: str, reference_value: str, config: VerifierConf
 
 
 @_register(AnswerType.EXPRESSION)
-def _verify_expression(prediction: str, reference_value: str, config: VerifierConfig) -> VerifierResult:
-    # The isolated symbolic worker (bounded process, math-verify, SymPy
-    # cross-check) is wired into this dispatch in the next task.
-    del prediction, reference_value, config
-    return VerifierResult(
-        status=VerifierStatus.INTERNAL_ERROR,
-        reward=0.0,
-        normalized_prediction=None,
-        normalized_reference=None,
-        details={"reason": "symbolic verification is wired in the verifier worker task"},
-    )
+def _verify_expression(
+    prediction: str, reference_value: str, config: VerifierConfig, task_id: str
+) -> VerifierResult:
+    del config  # worker limits are infrastructure concerns, not verification semantics
+    verdict = _get_expression_worker().compare(prediction, reference_value, task_id)
+    return VerifierResult.model_validate(verdict)
 
 
 def _correct(

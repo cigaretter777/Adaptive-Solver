@@ -1,0 +1,8 @@
+{"prediction": "2^{10^{100}}", "reference": "3^{10^{100}}", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "(((((5!)!)!)!)!)", "reference": "120", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "f(x) + 1", "reference": "f(x) + 1", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "/etc/passwd", "reference": "/etc/passwd", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "__import__('os').system('touch /tmp/adaptive_math_adversarial_marker')", "reference": "1", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "$(rm -rf /tmp/adaptive_math_adversarial_marker)", "reference": "1", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "https://example.com/x", "reference": "https://example.com/x", "allowed": ["invalid_prediction", "timeout"]}
+{"prediction": "cos\\nsystem\\n(S'echo pwned'\\ntR.", "reference": "1", "allowed": ["invalid_prediction", "timeout"]}
