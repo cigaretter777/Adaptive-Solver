@@ -1,0 +1,180 @@
+{
+  "trajectories": [
+    {
+      "query": "计算 1+1",
+      "route_decision": "direct_turbo",
+      "transitions": [
+        {
+          "state": {
+            "status": "planning",
+            "step": 0
+          },
+          "action": "planner",
+          "next_state": {
+            "status": "executing",
+            "step": 1
+          },
+          "reward": 0.1,
+          "done": false,
+          "info": {}
+        },
+        {
+          "state": {
+            "status": "executing",
+            "step": 1
+          },
+          "action": "tool_caller",
+          "next_state": {
+            "status": "completed",
+            "step": 2
+          },
+          "reward": 0.8,
+          "done": false,
+          "info": {}
+        }
+      ],
+      "final_answer": "已处理: 计算 1+1",
+      "success": true,
+      "total_reward": 0.9,
+      "steps": 2,
+      "timestamp": "2026-04-12T15:40:53.667585",
+      "metadata": {
+        "steps": 2
+      }
+    },
+    {
+      "query": "证明勾股定理",
+      "route_decision": "workflow",
+      "transitions": [
+        {
+          "state": {
+            "status": "planning",
+            "step": 0
+          },
+          "action": "planner",
+          "next_state": {
+            "status": "executing",
+            "step": 1
+          },
+          "reward": 0.1,
+          "done": false,
+          "info": {}
+        },
+        {
+          "state": {
+            "status": "executing",
+            "step": 1
+          },
+          "action": "tool_caller",
+          "next_state": {
+            "status": "completed",
+            "step": 2
+          },
+          "reward": 0.8,
+          "done": false,
+          "info": {}
+        }
+      ],
+      "final_answer": "已处理: 证明勾股定理",
+      "success": false,
+      "total_reward": 0.9,
+      "steps": 2,
+      "timestamp": "2026-04-12T15:40:53.667637",
+      "metadata": {
+        "steps": 2
+      }
+    },
+    {
+      "query": "分析算法复杂度",
+      "route_decision": "workflow",
+      "transitions": [
+        {
+          "state": {
+            "status": "planning",
+            "step": 0
+          },
+          "action": "planner",
+          "next_state": {
+            "status": "executing",
+            "step": 1
+          },
+          "reward": 0.1,
+          "done": false,
+          "info": {}
+        },
+        {
+          "state": {
+            "status": "executing",
+            "step": 1
+          },
+          "action": "tool_caller",
+          "next_state": {
+            "status": "completed",
+            "step": 2
+          },
+          "reward": 0.8,
+          "done": false,
+          "info": {}
+        }
+      ],
+      "final_answer": "已处理: 分析算法复杂度",
+      "success": false,
+      "total_reward": 0.9,
+      "steps": 2,
+      "timestamp": "2026-04-12T15:40:53.667650",
+      "metadata": {
+        "steps": 2
+      }
+    },
+    {
+      "query": "设计用户系统",
+      "route_decision": "direct_turbo",
+      "transitions": [
+        {
+          "state": {
+            "status": "planning",
+            "step": 0
+          },
+          "action": "planner",
+          "next_state": {
+            "status": "executing",
+            "step": 1
+          },
+          "reward": 0.1,
+          "done": false,
+          "info": {}
+        },
+        {
+          "state": {
+            "status": "executing",
+            "step": 1
+          },
+          "action": "tool_caller",
+          "next_state": {
+            "status": "completed",
+            "step": 2
+          },
+          "reward": 0.8,
+          "done": false,
+          "info": {}
+        }
+      ],
+      "final_answer": "已处理: 设计用户系统",
+      "success": true,
+      "total_reward": 0.9,
+      "steps": 2,
+      "timestamp": "2026-04-12T15:40:53.667659",
+      "metadata": {
+        "steps": 2
+      }
+    }
+  ],
+  "statistics": {
+    "total_trajectories": 4,
+    "success_count": 2,
+    "success_rate": 50.0,
+    "average_steps": 2.0,
+    "average_reward": 0.9
+  },
+  "exported_at": "2026-04-12T15:40:53.667966"
+}

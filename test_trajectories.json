@@ -1,0 +1,36 @@
+{
+  "trajectories": [
+    {
+      "query": "测试查询",
+      "route_decision": "workflow",
+      "transitions": [
+        {
+          "state": {
+            "s": "planning"
+          },
+          "action": "planner",
+          "next_state": {
+            "s": "executing"
+          },
+          "reward": 0.1,
+          "done": false,
+          "info": {}
+        }
+      ],
+      "final_answer": "答案",
+      "success": true,
+      "total_reward": 0.1,
+      "steps": 1,
+      "timestamp": "2026-09-09T20:15:24.602287",
+      "metadata": {}
+    }
+  ],
+  "statistics": {
+    "total_trajectories": 1,
+    "success_count": 1,
+    "success_rate": 100.0,
+    "average_steps": 1.0,
+    "average_reward": 0.1
+  },
+  "exported_at": "2026-09-09T20:15:24.602574"
+}
