@@ -17,11 +17,9 @@ from adaptive_math.verifier import normalize_surface
         ("$$x^2$$", "x^2"),
         (r"\(x\)", "x"),
         (r"\[x\]", "x"),
-        ("1,234", "1234"),
-        ("1,234,567", "1234567"),
-        ("1,234.5", "1234.5"),
-        ("12,34", "12,34"),  # not a safe thousands grouping
+        ("1,234", "1,234"),  # thousands grouping is resolved type-aware in numeric parsing
         ("(1,2,3)", "(1,2,3)"),  # tuple separators untouched
+        ("{99,100,101}", "{99,100,101}"),  # set elements must never be merged
         ("  $ x $  ", "x"),
         ("", ""),
     ],

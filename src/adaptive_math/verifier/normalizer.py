@@ -1,8 +1,10 @@
 """Surface normalization for extracted answers.
 
 Representation-preserving cleanup only: NFKC, trim, unicode minus to ASCII,
-one outer math delimiter, frac spelling and safe thousands separators.
-It must never simplify algebra.
+one outer math delimiter and frac spelling. It must never simplify algebra.
+Thousands separators are deliberately NOT handled here: distinguishing
+"1,234" from set elements like "{99,100}" requires answer-type context, so
+they are resolved in the typed numeric parser (verifier.numeric).
 """
 
 import re
@@ -10,7 +12,6 @@ import re
 from adaptive_math.core.hashing import canonical_text
 
 _FRAC_SPELLING = re.compile(r"\\[dt]frac\b")
-_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")
 _DELIMITER_PAIRS = (("$$", "$$"), (r"\[", r"\]"), (r"\(", r"\)"), ("$", "$"))
 
 
@@ -18,7 +19,6 @@ def normalize_surface(value: str) -> str:
     text = canonical_text(value)
     text = text.replace("\u2212", "-")
     text = _FRAC_SPELLING.sub(r"\\frac", text)
-    text = _THOUSANDS.sub("", text)
     return _strip_outer_delimiters(text)
 
 
