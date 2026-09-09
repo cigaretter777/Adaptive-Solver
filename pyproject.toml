@@ -58,4 +58,7 @@ exclude = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# Run as `uv run mypy` without path arguments: the legacy src/__init__.py
+# makes explicit `src/adaptive_math/...` paths resolve to a second module
+# name ("src.adaptive_math.*") and conflict with the installed package.
 packages = ["adaptive_math"]
