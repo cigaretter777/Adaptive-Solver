@@ -20,7 +20,7 @@ class SandboxRunRequest(BaseModel):
 
 
 class SandboxRunResult(BaseModel):
-    """Normalized subset of the pinned SandboxFusion response contract."""
+    """Execution payload nested under SandboxFusion's ``run_result`` key."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -29,6 +29,15 @@ class SandboxRunResult(BaseModel):
     return_code: int
     stdout: str
     stderr: str
+
+
+class SandboxRunResponse(BaseModel):
+    """The response envelope returned by SandboxFusion's ``/run_code`` API."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str
+    run_result: SandboxRunResult | None = None
 
 
 class SandboxFusionClient:
@@ -69,7 +78,7 @@ class SandboxFusionClient:
                 latency_ms=_elapsed_ms(started),
             )
         try:
-            payload = SandboxRunResult.model_validate(response.json())
+            payload = SandboxRunResponse.model_validate(response.json())
         except (ValidationError, ValueError):
             return ToolResult(
                 ok=False,
@@ -78,20 +87,28 @@ class SandboxFusionClient:
                 latency_ms=_elapsed_ms(started),
             )
 
-        output = _format_output(payload.stdout, payload.stderr)
-        if payload.status == "success" and payload.return_code == 0:
+        if payload.run_result is None:
+            return ToolResult(
+                ok=False,
+                output="",
+                error_code=ToolErrorCode.EXECUTION_ERROR,
+                latency_ms=_elapsed_ms(started),
+            )
+        run_result = payload.run_result
+        output = _format_output(run_result.stdout, run_result.stderr)
+        if payload.status == "Success" and run_result.status == "Finished" and run_result.return_code == 0:
             return ToolResult(
                 ok=True,
                 output=output,
                 latency_ms=_elapsed_ms(started),
-                metadata={"execution_time": payload.execution_time},
+                metadata={"execution_time": run_result.execution_time},
             )
         return ToolResult(
             ok=False,
             output=output,
             error_code=ToolErrorCode.EXECUTION_ERROR,
             latency_ms=_elapsed_ms(started),
-            metadata={"execution_time": payload.execution_time},
+            metadata={"execution_time": run_result.execution_time},
         )
 
     async def health(self) -> bool:

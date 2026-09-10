@@ -13,11 +13,16 @@ def test_run_code_posts_only_code_and_language(respx_mock: object) -> None:
         return_value=httpx.Response(
             200,
             json={
-                "status": "success",
-                "execution_time": 0.12,
-                "return_code": 0,
-                "stdout": "42\n",
-                "stderr": "",
+                "status": "Success",
+                "message": "",
+                "compile_result": None,
+                "run_result": {
+                    "status": "Finished",
+                    "execution_time": 0.12,
+                    "return_code": 0,
+                    "stdout": "42\n",
+                    "stderr": "",
+                },
             },
         )
     )
@@ -34,7 +39,24 @@ def test_run_code_posts_only_code_and_language(respx_mock: object) -> None:
 @pytest.mark.parametrize(
     ("response", "expected"),
     [
-        (httpx.Response(200, json={"status": "error", "execution_time": 0.1, "return_code": 1, "stdout": "", "stderr": "SyntaxError"}), ToolErrorCode.EXECUTION_ERROR),
+        (
+            httpx.Response(
+                200,
+                json={
+                    "status": "Failed",
+                    "message": "",
+                    "compile_result": None,
+                    "run_result": {
+                        "status": "Finished",
+                        "execution_time": 0.1,
+                        "return_code": 1,
+                        "stdout": "",
+                        "stderr": "SyntaxError",
+                    },
+                },
+            ),
+            ToolErrorCode.EXECUTION_ERROR,
+        ),
         (httpx.Response(500), ToolErrorCode.UNAVAILABLE),
         (httpx.Response(200, json={"unexpected": "shape"}), ToolErrorCode.EXECUTION_ERROR),
     ],
