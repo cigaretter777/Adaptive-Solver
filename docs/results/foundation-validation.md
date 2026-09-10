@@ -120,9 +120,41 @@ SFT bucket requirement; NuminaMath-TIR (83% kept) adds further supply.
 Omni-MATH's 38% `unverifiable_reference` is expected: the evaluation plan
 freezes only its rule-verifiable subset. DAPO kept 100/100.
 
-Full `data/manifests/v1.json` build: deferred by design to the training data
-materialization step (Training Plan Task 2); the sample build exercises the
-identical code path and the audit runs against the sample manifest.
+### Full v1 build (completed after the extraction fix)
+
+```text
+uv run python scripts/data/build_dataset.py --registry configs/data/sources.yaml \
+  --output-dir data/processed/v1 --manifest data/manifests/v1.json --seed 20260910
+
+loaded:    openr1 93,733 | dapo 1,791,700 | numinamath_tir 72,441 | omni_math 4,428
+kept:      openr1 21,604 (23%) | dapo 1,791,700 (0 quarantined) |
+           numinamath_tir 68,870 (95%) | omni_math 3,472 (78%)
+dedup:     exact_removed 1,782,412 | near_removed 2,430
+quarantine total: 76,656
+splits:    train 87,620 | sft_dev 4,868 | rl_dev 4,868 | frozen_eval 3,448
+           (100,804 unique tasks)
+build time: ~25 min on Apple M5 / 16 GB (reference self-checks short-circuit
+           on canonical equality, so expression rows verify in milliseconds)
+```
+
+Audit of the full manifest:
+
+```text
+uv run python scripts/data/audit_dataset.py --manifest data/manifests/v1.json
+-> {"ok": true, "errors": []}
+```
+
+Notes:
+
+- DAPO-Math-17k stores each of its 17,917 problems ~100x (1,791,700 rows);
+  exact deduplication collapses it to the nominal 17,917 unique problems,
+  confirming the registry entry is sound despite the surprising row count.
+- Full-build OpenR1 retention (23%) is below the 100-record sample estimate
+  (29%) — sample variance; absolute supply (~21.6k OpenR1 + ~68.9k
+  NuminaMath verified problems) still exceeds the 20k SFT trajectory target
+  and the 8–12k RL prompt requirement.
+- frozen_eval (3,448 rows) is the rule-verifiable Omni-MATH subset frozen
+  for offline evaluation; the Evaluation Plan will pin it further.
 
 ## Deviations from plan (recorded)
 

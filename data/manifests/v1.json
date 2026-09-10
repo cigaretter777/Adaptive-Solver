@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "pipeline_version": "33dbfb71658d295391a7f4ab295a4ecd93485877",
+  "seed": 20260910,
+  "sources": {
+    "openr1_math_220k": {
+      "name": "openr1_math_220k",
+      "uri": "https://huggingface.co/datasets/open-r1/OpenR1-Math-220k",
+      "revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "resolved_revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+      "license": "apache-2.0",
+      "intended_use": "train",
+      "citation": "Hugging Face Open R1, OpenR1-Math-220k (2025).",
+      "answer_type": "expression",
+      "loaded_count": 93733,
+      "kept_count": 21604,
+      "quarantined_count": 72129
+    },
+    "dapo_math_17k": {
+      "name": "dapo_math_17k",
+      "uri": "https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k",
+      "revision": "65877096c24ffa7abc4e4fa5edb95cf3413a5674",
+      "resolved_revision": "65877096c24ffa7abc4e4fa5edb95cf3413a5674",
+      "license": "apache-2.0",
+      "intended_use": "train",
+      "citation": "Yu et al., DAPO: An Open-Source LLM Reinforcement Learning System at Scale (2025).",
+      "answer_type": "integer",
+      "loaded_count": 1791700,
+      "kept_count": 1791700,
+      "quarantined_count": 0
+    },
+    "numinamath_tir": {
+      "name": "numinamath_tir",
+      "uri": "https://huggingface.co/datasets/AI-MO/NuminaMath-TIR",
+      "revision": "77a91d7b7a1a98ac4b1beb7d86c09d156b935dcd",
+      "resolved_revision": "77a91d7b7a1a98ac4b1beb7d86c09d156b935dcd",
+      "license": "apache-2.0",
+      "intended_use": "train",
+      "citation": "Project Numina, NuminaMath-TIR (2024).",
+      "answer_type": "expression",
+      "loaded_count": 72441,
+      "kept_count": 68870,
+      "quarantined_count": 3571
+    },
+    "omni_math": {
+      "name": "omni_math",
+      "uri": "https://huggingface.co/datasets/KbsdJames/Omni-MATH",
+      "revision": "40ba231d8f16e29ecd40e6407e2c8640145a8f62",
+      "resolved_revision": "40ba231d8f16e29ecd40e6407e2c8640145a8f62",
+      "license": "apache-2.0",
+      "intended_use": "eval",
+      "citation": "Gao et al., Omni-MATH: A Universal Olympiad Level Mathematic Benchmark for Large Language Models (2024).",
+      "answer_type": "expression",
+      "loaded_count": 4428,
+      "kept_count": 3472,
+      "quarantined_count": 956
+    }
+  },
+  "splits": {
+    "train": {
+      "name": "train",
+      "file": "train.parquet",
+      "count": 87620,
+      "task_ids_hash": "bc18adbb8fc4e0c50b1ac02e28fa94c05798de4336785f35b032775fc1f7eaed",
+      "file_hash": "36761a10be03e99c57f30fd22c619dd82f94bed0271fbe3dcf2605f4307109e1"
+    },
+    "sft_dev": {
+      "name": "sft_dev",
+      "file": "sft_dev.parquet",
+      "count": 4868,
+      "task_ids_hash": "7b2bfdf42364b6abf84e5404df0e3844f914bf48b1b23ae3cc4e2a069c5f45d4",
+      "file_hash": "f3bbc622f03d8e84d1a66aa3784ad9e5b1d55ebff5041987014634c98b4009c5"
+    },
+    "rl_dev": {
+      "name": "rl_dev",
+      "file": "rl_dev.parquet",
+      "count": 4868,
+      "task_ids_hash": "914b26d437bf3b15896f42fc489be64d4ef2501c7a7270eacc37ce976d938198",
+      "file_hash": "6cc2aab48d1ff004f1986bb65e137fad20feb11fe8330938927bcc39440c436f"
+    },
+    "frozen_eval": {
+      "name": "frozen_eval",
+      "file": "frozen_eval.parquet",
+      "count": 3448,
+      "task_ids_hash": "e5f621ea937387836e61e84c97769f6f36b00aee1ce2db51809722188284b69b",
+      "file_hash": "bacdcecb75f8c8f765f9fbeaef64617eb0304294ec201dbffd40d333e653bb81"
+    }
+  },
+  "dedup": {
+    "exact_removed": 1782412,
+    "near_removed": 2430
+  },
+  "quarantine_total": 76656
+}
