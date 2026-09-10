@@ -22,7 +22,7 @@ from adaptive_math.verifier import (
     ExtractResult,
     ExtractStatus,
     VerifierStatus,
-    extract,
+    extract_solution_answer,
     normalize_surface,
     verify_answer,
 )
@@ -131,7 +131,7 @@ def _extract_answer(
                 status=ExtractStatus.MISSING,
                 details={"reason": "empty source solution field"},
             )
-        result = extract(solution)
+        result = extract_solution_answer(solution)
         if result.status is ExtractStatus.OK and result.value is not None:
             # The solution extractor has already identified a single answer.
             # Normalize its surface form, but do not feed the plain value back

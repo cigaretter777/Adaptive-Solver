@@ -93,17 +93,32 @@ Quarantine breakdown by source and reason:
 | numinamath_tir | 11 | 6 | 0 | 17 |
 | dapo_math_17k | 0 | 0 | 0 | 0 |
 
-**Finding (open before the full build):** OpenR1-Math-220k solutions lose 84%
-of the sample. The dominant cause is `ambiguous_answer` from "N dollar
-groups found": those solutions contain multiple `$...$` spans and no
-`\boxed{}`, so the final-answer extractor (designed for short answer
-strings) cannot locate a single answer. OpenR1's solution format is
-heterogeneous (`upstream_source` varies); the fix is a solution-mode
-extraction path (last `\boxed`, then "final answer is"-style prose anchors,
-then trailing expression) with per-source audit before the full build.
-Omni-MATH's 38% `unverifiable_reference` reflects its intentionally hard
-answer formats (sets, intervals, radicals) under the expression verifier.
-DAPO's integer configuration kept 100/100 on the sample.
+**Finding (RESOLVED — solution-mode extraction):** OpenR1-Math-220k
+solutions initially lost 84% of the sample because the strict
+trajectory-output extractor treated multi-`$` solution prose as ambiguous.
+Fix: a dedicated `extract_solution_answer` for dataset worked solutions —
+last `\boxed{...}` in a bounded tail window, then prose anchors
+("final answer is" / "answer is:" / "answer:") scanned last-to-first, then
+whole-text single `$...$`/`$$...$$` spans ("$D$" solutions). Anchored values
+stop at the first non-math word. The strict extractor for model output is
+unchanged (multiple candidates remain AMBIGUOUS there).
+
+Measured on the same 100-record sample (seed 20260910):
+
+| Stage | OpenR1 kept | quarantine reasons |
+|---|---|---|
+| before fix | 16 | 57 ambiguous, 20 unverifiable, 7 missing |
+| solution mode v1 | 25 | 68 missing, 7 unverifiable |
+| + anchor/span rules | **29** | 64 missing, 7 unverifiable |
+
+The remaining 64 were inspected: answers embedded in prose without anchors,
+grading-rubric notes, literature references and multi-solution equations.
+Extracting those would require guessing, which the fail-closed principle
+forbids (a wrong label is worse than a lost row). At 220k scale, 29%
+retention still yields ~64k DIRECT candidates — far above the 8,000-record
+SFT bucket requirement; NuminaMath-TIR (83% kept) adds further supply.
+Omni-MATH's 38% `unverifiable_reference` is expected: the evaluation plan
+freezes only its rule-verifiable subset. DAPO kept 100/100.
 
 Full `data/manifests/v1.json` build: deferred by design to the training data
 materialization step (Training Plan Task 2); the sample build exercises the

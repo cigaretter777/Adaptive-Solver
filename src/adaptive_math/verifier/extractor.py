@@ -1,10 +1,21 @@
-"""Bounded final-answer extraction from raw model output.
+"""Bounded final-answer extraction.
 
-Extraction is purely textual: it never executes input and never raises for
-arbitrary text. Every outcome is an ExtractResult with status OK, MISSING or
-AMBIGUOUS. Priority: <final> tags, then \\boxed{...}, then $...$ / $$...$$.
+Two modes with deliberately different semantics:
+
+- ``extract`` is the strict trajectory-output extractor for model responses:
+  priority <final> tags, then \\boxed{...}, then $...$ / $$...$$; multiple
+  candidates are AMBIGUOUS because a protocol-valid turn has one answer.
+- ``extract_solution_answer`` is for dataset worked solutions, a different
+  genre: the final answer is conventionally the LAST \\boxed{...}, or
+  follows a prose anchor ("final answer is ..."). Solutions may far exceed
+  MAX_INPUT_CHARS, so only a bounded tail window is scanned. Without a
+  boxed group or anchor the result is MISSING — never a guess among inline
+  math spans.
+
+Both modes are purely textual: they never execute input and never raise.
 """
 
+import re
 from enum import StrEnum
 
 import orjson
@@ -14,9 +25,15 @@ from adaptive_math.core.types import JSONValue
 
 MAX_INPUT_CHARS = 32768
 MAX_NESTING = 64
+SOLUTION_TAIL_WINDOW = 32768
 
 _FINAL_OPEN = "<final>"
 _FINAL_CLOSE = "</final>"
+
+_PROSE_ANCHOR = re.compile(r"(?:final\s+answer|answer)\s*(?:is\s*:?|:)\s*", re.IGNORECASE)
+# A math run after an anchor: LaTeX commands, escaped chars, digits and
+# operators. Bare words (e.g. "dollars per item") terminate the run.
+_MATH_RUN = re.compile(r"(?:\\[a-zA-Z]+|\\.|[\d.,+\-*/^=(){}\[\]\s])+")
 
 
 class ExtractStatus(StrEnum):
@@ -59,6 +76,74 @@ def extract(raw: str) -> ExtractResult:
 def extract_final_answer(raw: str) -> str | None:
     result = extract(raw)
     return result.value if result.status is ExtractStatus.OK else None
+
+
+def extract_solution_answer(solution: str) -> ExtractResult:
+    """Extract the final answer from a full worked solution.
+
+    Priority: last complete \\boxed{...} in the bounded tail window, then
+    prose anchors ("final answer is"/"answer is:"/"answer:") scanned last to
+    first for a math-run value, then a whole-text single $...$/$$...$$ span
+    (some solutions are just "$D$"). Anything else is MISSING; this never
+    reports AMBIGUOUS and never guesses among spans embedded in prose.
+    """
+    if not solution.strip():
+        return _missing("empty solution")
+    tail = solution[-SOLUTION_TAIL_WINDOW:]
+    boxed = _scan_boxed(tail)
+    if boxed:
+        return _ok(boxed[-1], details={"method": "last_boxed"})
+    # last anchor first: a trailing "the answer is discussed above" must not
+    # hide an earlier usable "the answer is 42"
+    for anchor in reversed(list(_PROSE_ANCHOR.finditer(tail))):
+        value = _anchor_value(tail[anchor.end() :])
+        if value is not None:
+            return _ok(value, details={"method": "prose_anchor"})
+    whole = _whole_text_math_span(tail)
+    if whole is not None:
+        return _ok(whole, details={"method": "whole_text_span"})
+    return _missing("no boxed group and no usable prose anchor found")
+
+
+def _whole_text_math_span(text: str) -> str | None:
+    """Return the content when the ENTIRE text is one $...$ or $$...$$ span.
+
+    Some dataset solutions are nothing but the final answer ("$D$"). A math
+    span embedded in prose is deliberately not accepted here.
+    """
+    stripped = text.strip()
+    for marker in ("$$", "$"):
+        if (
+            stripped.startswith(marker)
+            and stripped.endswith(marker)
+            and len(stripped) > 2 * len(marker)
+        ):
+            inner = stripped[len(marker) : -len(marker)]
+            if marker not in inner.replace("\\" + marker, ""):
+                inner = inner.strip()
+                if inner:
+                    return inner
+    return None
+
+
+def _anchor_value(rest: str) -> str | None:
+    text = rest.strip()
+    if not text:
+        return None
+    if text.startswith("$"):
+        end = text.find("$", 1)
+        if end > 1:
+            inner = text[1:end].strip()
+            return inner or None
+    if text.startswith("\\boxed"):
+        boxed = _scan_boxed(text)
+        if boxed:
+            return boxed[0]
+    match = _MATH_RUN.match(text)
+    if match is None:
+        return None
+    value = match.group(0).strip().rstrip(".")
+    return value or None
 
 
 def _extract_final_tags(text: str) -> ExtractResult:
@@ -161,8 +246,8 @@ def _scan_dollar_groups(text: str, marker: str) -> list[str]:
     return groups
 
 
-def _ok(value: str) -> ExtractResult:
-    return ExtractResult(status=ExtractStatus.OK, value=value)
+def _ok(value: str, details: dict[str, JSONValue] | None = None) -> ExtractResult:
+    return ExtractResult(status=ExtractStatus.OK, value=value, details=details or {})
 
 
 def _missing(reason: str) -> ExtractResult:

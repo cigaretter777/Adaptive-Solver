@@ -63,7 +63,12 @@ def test_missing_answer_is_quarantined() -> None:
     assert quarantined[0].reason is QuarantineReason.MISSING_ANSWER
 
 
-def test_ambiguous_answer_is_quarantined() -> None:
+def test_solution_with_multiple_boxed_keeps_the_last_one() -> None:
+    # Solution-mode extraction convention: in a worked solution the final
+    # answer is the LAST \boxed{...}; earlier ones are intermediate steps.
+    # (This replaced an ambiguous-quarantine expectation when solution-mode
+    # extraction was introduced; the strict trajectory extractor still treats
+    # multiple boxed groups as AMBIGUOUS.)
     spec = make_spec(
         loader_params={"problem_column": "problem", "solution_column": "solution"}
     )
@@ -71,8 +76,9 @@ def test_ambiguous_answer_is_quarantined() -> None:
         {"problem": "What is 1+1?", "solution": "It is \\boxed{1} or \\boxed{2}."}
     ]
     kept, quarantined = canonicalize_source(spec, records)
-    assert kept == []
-    assert quarantined[0].reason is QuarantineReason.AMBIGUOUS_ANSWER
+    assert quarantined == []
+    assert len(kept) == 1
+    assert kept[0].reference.value == "2"
 
 
 def test_unverifiable_reference_is_quarantined() -> None:

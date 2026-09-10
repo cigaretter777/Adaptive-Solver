@@ -5,6 +5,7 @@ from adaptive_math.verifier.extractor import (
     ExtractStatus,
     extract,
     extract_final_answer,
+    extract_solution_answer,
 )
 from adaptive_math.verifier.normalizer import normalize_surface
 from adaptive_math.verifier.numeric import VerifierConfig
@@ -18,6 +19,7 @@ __all__ = [
     "VerifierStatus",
     "extract",
     "extract_final_answer",
+    "extract_solution_answer",
     "normalize_surface",
     "verify_answer",
 ]
