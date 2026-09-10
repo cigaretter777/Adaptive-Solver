@@ -1,0 +1,23 @@
+# Comparison-track config (original plan values). The low-cost mainline is
+# qwen3_1_7b_lora.yaml per docs/decisions/0001; run this only if budget allows.
+model_id: Qwen/Qwen3-4B
+model_revision: 1cfa9a7208912126459214e8b04321603b3df60c
+tokenizer_revision: 1cfa9a7208912126459214e8b04321603b3df60c
+# PLACEHOLDER — see qwen3_1_7b_lora.yaml.
+data_manifest_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+output_dir: artifacts/sft/qwen3_4b_lora
+precision: bf16
+max_length: 8192
+epochs: 1
+learning_rate: 1.0e-5
+warmup_ratio: 0.03
+weight_decay: 0.0
+lora_rank: 64
+lora_alpha: 128
+lora_dropout: 0.05
+lora_targets: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+gradient_checkpointing: true
+seed: 20260910
+logging_steps: 10
+per_device_batch_size: 1
+gradient_accumulation_steps: 8

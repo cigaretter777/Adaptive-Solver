@@ -30,6 +30,11 @@ class SFTConfig(BaseModel):
     gradient_checkpointing: bool
     seed: int
     logging_steps: int = Field(gt=0)
+    # Additive fields (master contract allows adding, never renaming):
+    # effective batch = per_device_batch_size * gradient_accumulation_steps
+    # * world_size, recorded in every resolved_config.yaml.
+    per_device_batch_size: int = Field(default=1, gt=0)
+    gradient_accumulation_steps: int = Field(default=8, gt=0)
 
     @field_validator("model_revision", "tokenizer_revision")
     @classmethod

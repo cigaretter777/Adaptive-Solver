@@ -1,0 +1,25 @@
+# Primary SFT config — low-cost route per docs/decisions/0001.
+# Qwen3-1.7B LoRA, bf16, single 4090-class GPU.
+model_id: Qwen/Qwen3-1.7B
+model_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+tokenizer_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+# PLACEHOLDER — replace with sha256 of data/manifests/sft_v1.json once the
+# SFT trajectory build (Training Plan Task 2) has materialized it.
+# run_sft.py refuses to train against an all-zero hash.
+data_manifest_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+output_dir: artifacts/sft/qwen3_1_7b_lora
+precision: bf16
+max_length: 8192
+epochs: 1
+learning_rate: 1.0e-5
+warmup_ratio: 0.03
+weight_decay: 0.0
+lora_rank: 64
+lora_alpha: 128
+lora_dropout: 0.05
+lora_targets: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+gradient_checkpointing: true
+seed: 20260910
+logging_steps: 10
+per_device_batch_size: 1
+gradient_accumulation_steps: 8
