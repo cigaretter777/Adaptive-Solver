@@ -46,6 +46,28 @@ class ProductMathEnv:
     def state(self) -> AgentState:
         return self._state
 
+    @property
+    def trace_id(self) -> str:
+        return self._trace_id
+
+    @property
+    def registry(self) -> ToolRegistry:
+        """Live public tool schemas used for prompt rendering."""
+        return self._registry
+
+    def record_model_output(self, raw: str, generated_tokens: int, monotonic_ms: int) -> AgentState:
+        if self._state.termination_reason is not None:
+            raise ValueError("cannot record output for a terminated environment")
+        self._state = self._state.append_event(
+            EventKind.MODEL_OUTPUT, {"raw": raw}, monotonic_ms
+        ).with_usage(generated_tokens=generated_tokens)
+        return self._state
+
+    def abort(self, reason: TerminationReason) -> AgentState:
+        if self._state.termination_reason is None:
+            self._state = self._state.terminate(reason)
+        return self._state
+
     async def step(self, action: ToolAction | FinalAction | None, monotonic_ms: int) -> StepResult:
         if self._state.termination_reason is not None:
             raise ValueError("cannot step a terminated environment")
@@ -55,10 +77,12 @@ class ProductMathEnv:
             return self._store(state, None)
         if not isinstance(action, ToolAction):
             return self._invalid("Use exactly one <tool_call> or <final> action.", monotonic_ms)
+        call = action.call
         if self._state.usage.tool_calls >= self._state.budget.max_tool_calls:
             return self._invalid("Tool-call budget exhausted; submit a final answer.", monotonic_ms)
+        if call.name == "python" and self._state.usage.python_seconds >= self._state.budget.max_python_seconds:
+            return self._invalid("Python-time budget exhausted; use another tool or submit a final answer.", monotonic_ms)
 
-        call = action.call
         state = self._state.append_event(
             EventKind.TOOL_CALL,
             {"name": call.name, "arguments": call.arguments},

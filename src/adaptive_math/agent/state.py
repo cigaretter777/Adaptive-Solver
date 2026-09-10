@@ -95,7 +95,9 @@ class AgentState(BaseModel):
     def budget_reason(self) -> TerminationReason | None:
         if self.usage.steps >= self.budget.max_steps:
             return TerminationReason.MAX_STEPS
-        if self.usage.python_seconds >= self.budget.max_python_seconds:
+        # A zero Python budget disables Python execution; it must not terminate
+        # an otherwise valid direct/SymPy trajectory before Python is used.
+        if self.usage.python_seconds > 0 and self.usage.python_seconds >= self.budget.max_python_seconds:
             return TerminationReason.PYTHON_TIME_BUDGET
         return None
 
