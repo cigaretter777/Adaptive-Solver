@@ -1,4 +1,6 @@
+import copy
 import json
+from collections.abc import Mapping
 
 import pytest
 from pydantic import ValidationError
@@ -20,6 +22,7 @@ def make_task(**overrides: object) -> MathTask:
         "dataset": "aime_2024",
         "split": "train",
         "source_hash": "a" * 64,
+        "pipeline_version": "canonicalize-v1",
     }
     fields.update(overrides)
     return MathTask(**fields)
@@ -57,6 +60,39 @@ def test_task_requires_all_public_fields() -> None:
 
 def test_metadata_defaults_to_empty() -> None:
     assert make_task().metadata == {}
+
+
+def test_task_lineage_and_nested_metadata_are_immutable() -> None:
+    task = make_task(metadata={"provenance": {"tags": ["aime"]}})
+
+    for field in ("task_id", "dataset", "split", "source_hash", "pipeline_version"):
+        with pytest.raises(ValidationError):
+            setattr(task, field, "changed")
+    provenance = task.metadata["provenance"]
+    assert isinstance(provenance, Mapping)
+    with pytest.raises(TypeError):
+        provenance["source"] = "mutated"
+    tags = provenance["tags"]
+    assert isinstance(tags, tuple)
+    with pytest.raises(AttributeError):
+        tags.append("mutated")
+
+
+def test_immutable_metadata_survives_deep_copy_and_json_serialization() -> None:
+    task = make_task(metadata={"nested": {"values": [1, 2]}})
+
+    copied = copy.deepcopy(task)
+    model_copied = task.model_copy(deep=True)
+    assert copied == task
+    assert model_copied == task
+    assert json.loads(task.model_dump_json())["metadata"] == {"nested": {"values": [1, 2]}}
+
+
+def test_pipeline_version_is_required() -> None:
+    values = make_task().model_dump()
+    values.pop("pipeline_version")
+    with pytest.raises(ValidationError):
+        MathTask.model_validate(values)
 
 
 def test_zero_or_negative_budgets_are_invalid() -> None:

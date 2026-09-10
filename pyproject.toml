@@ -73,3 +73,7 @@ packages = ["adaptive_math"]
 [[tool.mypy.overrides]]
 module = ["sympy", "sympy.*", "math_verify", "math_verify.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["datasets", "datasets.*", "datasketch", "datasketch.*"]
+ignore_missing_imports = true

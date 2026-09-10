@@ -187,13 +187,14 @@ class ComplexityAnalyzer:
         if any(kw in query for kw in self.PROOF_KEYWORDS):
             return TaskType.PROOF
 
-        # 检查代码生成任务
-        if any(kw in query for kw in self.CODE_KEYWORDS):
-            return TaskType.CODE_GEN
-
         # 检查多步骤任务
         if any(kw in query for kw in self.MULTI_STEP_KEYWORDS):
             return TaskType.MULTI_STEP
+
+        # 检查代码生成任务。多步骤信号优先于代码关键词，避免把
+        # “首先…然后…最后实现代码”误路由为单一代码生成请求。
+        if any(kw in query for kw in self.CODE_KEYWORDS):
+            return TaskType.CODE_GEN
 
         # 检查推理任务
         if any(kw in query for kw in self.REASONING_KEYWORDS):
@@ -236,7 +237,8 @@ class ComplexityAnalyzer:
         type_scores = {
             TaskType.PROOF: 0.4,
             TaskType.MULTI_STEP: 0.35,
-            TaskType.CODE_GEN: 0.35,
+            # 代码生成至少需要规划、实现和验证，默认进入中等复杂度。
+            TaskType.CODE_GEN: 0.4,
             TaskType.ANALYSIS: 0.3,
             TaskType.REASONING: 0.25,
             TaskType.CALCULATION: 0.1,
