@@ -1,0 +1,2 @@
+{"raw":"<final>{\"answer\":\"42\"}</final>","kind":"final"}
+{"raw":"<think>Compute directly.</think><tool_call>{\"name\":\"python\",\"arguments\":{\"code\":\"print(2 + 2)\"}}</tool_call>","kind":"tool_call"}
