@@ -4,6 +4,16 @@ import math
 
 from pydantic import BaseModel, ConfigDict
 
+from adaptive_math.agent.trace import Trajectory
+from adaptive_math.core.types import Budget
+from adaptive_math.reward import (
+    RewardBreakdown,
+    RewardConfig,
+    RewardContext,
+    compute_reward,
+)
+from adaptive_math.verifier.service import VerifierResult
+
 
 class GroupAdvantages(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -12,6 +22,29 @@ class GroupAdvantages(BaseModel):
     effective: bool
     mean_reward: float
     std_reward: float
+
+
+def reward_for_trajectory(
+    trajectory: Trajectory,
+    verdict: VerifierResult,
+    budget: Budget,
+    *,
+    max_generated_tokens: int,
+    config: RewardConfig,
+) -> RewardBreakdown:
+    """Bridge a terminal rollout to the sole production reward implementation."""
+    return compute_reward(
+        RewardContext(
+            verifier_result=verdict,
+            tool_calls=trajectory.usage.tool_calls,
+            python_seconds=trajectory.usage.python_seconds,
+            invalid_action_count=trajectory.usage.invalid_actions,
+            generated_tokens=trajectory.usage.generated_tokens,
+            max_generated_tokens=max_generated_tokens,
+            budget=budget,
+        ),
+        config,
+    )
 
 
 def group_advantages(rewards: list[float], *, epsilon: float = 1e-6) -> GroupAdvantages:
