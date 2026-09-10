@@ -1,0 +1,123 @@
+"""Budgeted product and offline math environments with a hidden-label boundary."""
+
+from collections.abc import Mapping
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from adaptive_math.agent.actions import FinalAction, ToolAction
+from adaptive_math.agent.state import AgentState, EventKind, TerminationReason
+from adaptive_math.core.types import Budget, LabeledMathTask, MathTask
+from adaptive_math.tools.base import ToolContext
+from adaptive_math.tools.registry import ToolRegistry
+from adaptive_math.verifier.hidden import HiddenVerifier
+from adaptive_math.verifier.service import VerifierResult
+
+
+class Observation(BaseModel):
+    """Public model-visible result of one environment transition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["tool_result", "action_error", "budget_warning"]
+    content: str
+    remaining_steps: int = Field(ge=0)
+    remaining_tool_calls: int = Field(ge=0)
+    remaining_python_seconds: float = Field(ge=0)
+
+
+class StepResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    state: AgentState
+    observation: Observation | None
+    terminated: bool
+
+
+class ProductMathEnv:
+    """Serving environment: its constructor deliberately has no label input."""
+
+    def __init__(self, task: MathTask, budget: Budget, registry: ToolRegistry, trace_id: str = "runtime") -> None:
+        self._registry = registry
+        self._trace_id = trace_id
+        self._state = AgentState(task=task, budget=budget)
+
+    @property
+    def state(self) -> AgentState:
+        return self._state
+
+    async def step(self, action: ToolAction | FinalAction | None, monotonic_ms: int) -> StepResult:
+        if self._state.termination_reason is not None:
+            raise ValueError("cannot step a terminated environment")
+        if isinstance(action, FinalAction):
+            state = self._state.append_event(EventKind.FINAL, {"answer": action.answer}, monotonic_ms)
+            state = state.with_usage(steps=1).terminate(TerminationReason.FINAL, action.answer)
+            return self._store(state, None)
+        if not isinstance(action, ToolAction):
+            return self._invalid("Use exactly one <tool_call> or <final> action.", monotonic_ms)
+        if self._state.usage.tool_calls >= self._state.budget.max_tool_calls:
+            return self._invalid("Tool-call budget exhausted; submit a final answer.", monotonic_ms)
+
+        call = action.call
+        state = self._state.append_event(
+            EventKind.TOOL_CALL,
+            {"name": call.name, "arguments": call.arguments},
+            monotonic_ms,
+        ).with_usage(steps=1, tool_calls=1)
+        context = ToolContext(
+            trace_id=self._trace_id,
+            task_id=state.task.task_id,
+            remaining_observation_chars=state.budget.max_observation_chars,
+        )
+        result = await self._registry.execute(call.name, call.arguments, context)
+        python_seconds = _python_seconds(call.name, result.metadata)
+        state = state.with_usage(python_seconds=python_seconds).append_event(
+            EventKind.TOOL_RESULT,
+            result.model_dump(),
+            monotonic_ms,
+        )
+        observation = self._observation("tool_result", result.output, state)
+        state = self._terminate_if_exhausted(state)
+        return self._store(state, observation)
+
+    def _invalid(self, content: str, monotonic_ms: int) -> StepResult:
+        state = self._state.append_event(EventKind.INVALID_ACTION, {"message": content}, monotonic_ms)
+        state = state.with_usage(steps=1, invalid_actions=1)
+        observation = self._observation("action_error", content, state)
+        return self._store(self._terminate_if_exhausted(state), observation)
+
+    @staticmethod
+    def _observation(kind: Literal["tool_result", "action_error", "budget_warning"], content: str, state: AgentState) -> Observation:
+        return Observation(
+            kind=kind,
+            content=content,
+            remaining_steps=max(0, state.budget.max_steps - state.usage.steps),
+            remaining_tool_calls=max(0, state.budget.max_tool_calls - state.usage.tool_calls),
+            remaining_python_seconds=max(0.0, state.budget.max_python_seconds - state.usage.python_seconds),
+        )
+
+    def _terminate_if_exhausted(self, state: AgentState) -> AgentState:
+        reason = state.budget_reason()
+        return state.terminate(reason) if reason is not None else state
+
+    def _store(self, state: AgentState, observation: Observation | None) -> StepResult:
+        self._state = state
+        return StepResult(state=state, observation=observation, terminated=state.termination_reason is not None)
+
+
+class OfflineMathEnv(ProductMathEnv):
+    """Training environment whose label is inaccessible to the public parent API."""
+
+    def __init__(self, labeled_task: LabeledMathTask, budget: Budget, registry: ToolRegistry, trace_id: str = "runtime") -> None:
+        super().__init__(labeled_task.public_view(), budget, registry, trace_id)
+        self.__hidden_verifier = HiddenVerifier(labeled_task.reference, labeled_task.task.task_id)
+
+    def evaluate(self) -> VerifierResult | None:
+        if self.state.termination_reason is None or self.state.final_answer is None:
+            return None
+        return self.__hidden_verifier.evaluate(self.state.final_answer)
+
+
+def _python_seconds(tool_name: str, metadata: Mapping[str, object]) -> float:
+    value = metadata.get("execution_time") if tool_name == "python" else None
+    return float(value) if isinstance(value, int | float) and value >= 0 else 0.0
