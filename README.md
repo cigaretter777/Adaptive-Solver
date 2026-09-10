@@ -20,8 +20,31 @@
 - Python 3.12（由 uv 管理项目环境）
 - 安装依赖：`uv sync --dev`
 - 运行测试：`uv run pytest`
-- 代码检查：`uv run ruff check src tests`
-- 类型检查：`uv run mypy src/adaptive_math`
+- 代码检查：`uv run ruff check src tests scripts`
+- 类型检查：`uv run mypy`
+
+### 数据管线
+
+- 数据源治理：`configs/data/sources.yaml`（固定 revision + license + 用途 + 引用）
+- 构建（可复现、确定性）：
+
+```bash
+uv run python scripts/data/build_dataset.py \
+  --registry configs/data/sources.yaml \
+  --output-dir data/processed/v1 \
+  --manifest data/manifests/v1.json \
+  --seed 20260910
+```
+
+- 审计（hash 不匹配 / split 泄漏 / 重复 task_id / 不可验证 reference 都会非零退出）：
+
+```bash
+uv run python scripts/data/audit_dataset.py --manifest data/manifests/v1.json
+```
+
+- 下载数据不入库（`data/processed`、`data/raw` 被忽略）；manifest 与文档受版本管理
+- 操作手册：[docs/runbooks/data-and-verifier.md](docs/runbooks/data-and-verifier.md)
+- 门禁报告：[docs/results/foundation-validation.md](docs/results/foundation-validation.md)
 
 ## 项目概述
 
