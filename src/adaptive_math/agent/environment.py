@@ -59,7 +59,7 @@ class ProductMathEnv:
         if self._state.termination_reason is not None:
             raise ValueError("cannot record output for a terminated environment")
         self._state = self._state.append_event(
-            EventKind.MODEL_OUTPUT, {"raw": raw}, monotonic_ms
+            EventKind.MODEL_OUTPUT, {"raw": raw, "generated_tokens": generated_tokens}, monotonic_ms
         ).with_usage(generated_tokens=generated_tokens)
         return self._state
 
@@ -97,7 +97,7 @@ class ProductMathEnv:
         python_seconds = _python_seconds(call.name, result.metadata)
         state = state.with_usage(python_seconds=python_seconds).append_event(
             EventKind.TOOL_RESULT,
-            result.model_dump(),
+            {"name": call.name, "result": result.model_dump()},
             monotonic_ms,
         )
         observation = self._observation("tool_result", result.output, state)

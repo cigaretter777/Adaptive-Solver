@@ -1,0 +1,38 @@
+{
+  "schema_version": "trace-v1",
+  "runtime_version": "runtime-v1+agent-v1",
+  "prompt_version": "agent-v1",
+  "created_at": "2026-09-10T00:00:00Z",
+  "trajectory": {
+    "trace_id": "golden-direct",
+    "task_id": "golden-task",
+    "events": [
+      {
+        "sequence": 0,
+        "kind": "model_output",
+        "monotonic_ms": 0,
+        "payload": {
+          "raw": "<final>{\"answer\":\"2\"}</final>",
+          "generated_tokens": 2
+        }
+      },
+      {
+        "sequence": 1,
+        "kind": "final",
+        "monotonic_ms": 1,
+        "payload": {"answer": "2"}
+      }
+    ],
+    "final_answer": "2",
+    "termination_reason": "final",
+    "usage": {
+      "steps": 1,
+      "tool_calls": 0,
+      "python_seconds": 0.0,
+      "generated_tokens": 2,
+      "invalid_actions": 0
+    },
+    "runtime_version": "runtime-v1+agent-v1"
+  },
+  "content_hash": "851f9da5ac349a14ec1b96619e4d4a52469211f930ff389bd469180c3f95cedb"
+}
