@@ -1,0 +1,32 @@
+{
+  "schema_version": "training-upstreams-v1",
+  "upstreams": {
+    "verl-agent": {
+      "name": "verl-agent",
+      "repository": "https://github.com/langfengQ/verl-agent",
+      "requested_ref": "master",
+      "resolved_sha": "20bd331bdbc9026a5668e11362178e10ab7400c8",
+      "license": "Apache-2.0",
+      "resolved_at": "2026-09-10T00:00:00Z",
+      "compatibility_notes": "Pinned agent RL backend; its environment manager contract must be checked in the cloud image."
+    },
+    "verl": {
+      "name": "verl",
+      "repository": "https://github.com/verl-project/verl",
+      "requested_ref": "main",
+      "resolved_sha": "a9f2985159536a607211dcac730d3f5d55028950",
+      "license": "Apache-2.0",
+      "resolved_at": "2026-09-10T00:00:00Z",
+      "compatibility_notes": "Pinned RL engine dependency; the cloud preflight validates Qwen, LoRA, GRPO and rollout support."
+    },
+    "sandboxfusion": {
+      "name": "sandboxfusion",
+      "repository": "https://github.com/bytedance/SandboxFusion",
+      "requested_ref": "main",
+      "resolved_sha": "469de0845cb7d665bc68044d541aa3aa28c5b30a",
+      "license": "Apache-2.0",
+      "resolved_at": "2026-09-10T00:00:00Z",
+      "compatibility_notes": "Pinned external Python execution service; deployment also requires an audited immutable image digest."
+    }
+  }
+}
