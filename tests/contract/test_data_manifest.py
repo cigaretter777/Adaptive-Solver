@@ -174,3 +174,46 @@ def test_audit_detects_tampered_split(synthetic_env: dict[str, Path]) -> None:
     parquet.write_bytes(original + b"tampered")
     result = run_cli(AUDIT_SCRIPT, "--manifest", str(synthetic_env["manifest"]), expect_ok=False)
     assert result.returncode != 0
+
+
+def test_audit_resolves_documented_project_layout(synthetic_env: dict[str, Path]) -> None:
+    # Runbook layout: manifest at <root>/manifests/v1.json, splits at
+    # <root>/processed/v1/*.parquet. The exact runbook command (no extra
+    # flags) must resolve the split files by project convention.
+    root = synthetic_env["registry"].parent
+    manifest = root / "manifests" / "v1.json"
+    output = root / "processed" / "v1"
+    run_cli(
+        BUILD_SCRIPT,
+        "--registry",
+        str(synthetic_env["registry"]),
+        "--output-dir",
+        str(output),
+        "--manifest",
+        str(manifest),
+        "--seed",
+        "42",
+    )
+    run_cli(AUDIT_SCRIPT, "--manifest", str(manifest))
+
+
+def test_audit_accepts_explicit_data_root(synthetic_env: dict[str, Path]) -> None:
+    # A non-conventional split location must be resolvable via --data-root.
+    root = synthetic_env["registry"].parent
+    manifest = root / "elsewhere" / "m.json"
+    output = root / "custom_splits"
+    run_cli(
+        BUILD_SCRIPT,
+        "--registry",
+        str(synthetic_env["registry"]),
+        "--output-dir",
+        str(output),
+        "--manifest",
+        str(manifest),
+        "--seed",
+        "42",
+    )
+    run_cli(AUDIT_SCRIPT, "--manifest", str(manifest), "--data-root", str(output))
+    # without the override the same manifest must NOT silently pass
+    result = run_cli(AUDIT_SCRIPT, "--manifest", str(manifest), expect_ok=False)
+    assert result.returncode != 0

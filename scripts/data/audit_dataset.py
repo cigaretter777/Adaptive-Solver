@@ -35,15 +35,24 @@ KNOWN_LICENSES = {
 }
 
 
-def _resolve_split_file(manifest_path: Path, name: str) -> Path | None:
-    direct = manifest_path.parent / name
-    if direct.exists():
-        return direct
+def _resolve_split_file(manifest_path: Path, name: str, data_root: Path | None) -> Path | None:
+    # Resolution order: explicit --data-root, then the documented project
+    # convention (<root>/manifests/<stem>.json + <root>/processed/<stem>/),
+    # then the manifest's own directory, then an unambiguous recursive search.
+    roots = []
+    if data_root is not None:
+        roots.append(data_root)
+    roots.append(manifest_path.parent.parent / "processed" / manifest_path.stem)
+    roots.append(manifest_path.parent)
+    for root in roots:
+        candidate = root / name
+        if candidate.exists():
+            return candidate
     candidates = sorted(manifest_path.parent.rglob(name))
     return candidates[0] if len(candidates) == 1 else None
 
 
-def audit(manifest_path: Path) -> list[str]:
+def audit(manifest_path: Path, data_root: Path | None = None) -> list[str]:
     manifest = load_manifest(manifest_path)
     errors: list[str] = []
     if manifest.schema_version != "1.0":
@@ -55,7 +64,7 @@ def audit(manifest_path: Path) -> list[str]:
     seen_task_ids: set[str] = set()
     split_task_ids: dict[str, set[str]] = {}
     for split_name, info in manifest.splits.items():
-        path = _resolve_split_file(manifest_path, info.file)
+        path = _resolve_split_file(manifest_path, info.file, data_root)
         if path is None:
             errors.append(f"cannot resolve split file for {split_name}: {info.file}")
             continue
@@ -102,8 +111,14 @@ def audit(manifest_path: Path) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit a materialized math dataset")
     parser.add_argument("--manifest", required=True)
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=None,
+        help="directory containing the split parquet files (default: project convention)",
+    )
     args = parser.parse_args(argv)
-    errors = audit(Path(args.manifest))
+    errors = audit(Path(args.manifest), args.data_root)
     print(json.dumps({"ok": not errors, "errors": errors}, indent=2))
     return 0 if not errors else 1
 
