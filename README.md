@@ -46,6 +46,22 @@ uv run python scripts/data/audit_dataset.py --manifest data/manifests/v1.json
 - 操作手册：[docs/runbooks/data-and-verifier.md](docs/runbooks/data-and-verifier.md)
 - 门禁报告：[docs/results/foundation-validation.md](docs/results/foundation-validation.md)
 
+### Agent Runtime（V2）
+
+- 运行时执行严格的 `<tool_call>` / `<final>` 协议，轨迹可 hash 校验、可离线 Replay。
+- 产品路径没有参考答案；仅离线评估环境在终止后通过私有验证边界计算正确性。
+- 本地无权重 smoke（不下载模型）：
+
+```bash
+uv run python scripts/dev/run_agent.py \
+  --problem "Compute 17 * 19." --answer-type integer \
+  --config configs/agent/direct.yaml \
+  --scripted-action '<final>{"answer":"323"}</final>'
+```
+
+- 真实本地模型路径会使用 tokenizer 的 chat template；需要在云镜像或本机额外安装 `transformers`、`torch` 后传入 `--model`。Python 工具执行必须连接 Linux SandboxFusion，绝不会回退到宿主机执行。
+- 回放：`uv run python scripts/dev/replay_trace.py --trace tests/fixtures/golden_traces/direct_correct.json --verify-hash --print-events`
+
 ## 项目概述
 
     为解决通用大模型(如GPT-4、Qwen-3)在处理简单任务时性能过剩、在处理复杂任务时能力不足的问题,构建了一个融合动态路由、状态机编排与强化学习微调的智能 Agent 系统，旨在解决通用模型在复杂逻辑任务中成本高且准确率低的痛点。
@@ -317,4 +333,3 @@ Planner(state)
                           ↓
                     训练完成
 ```
-
