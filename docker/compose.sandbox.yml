@@ -1,0 +1,14 @@
+# SandboxFusion requires Linux namespaces/cgroups.  Set both variables from the
+# cloud provisioning manifest; a mutable image tag is deliberately rejected.
+services:
+  sandboxfusion:
+    image: ${SANDBOXFUSION_IMAGE_DIGEST:?set an image reference pinned with @sha256:...}
+    labels:
+      org.opencontainers.image.source: https://github.com/bytedance/SandboxFusion
+      org.opencontainers.image.revision: ${SANDBOXFUSION_GIT_SHA:?set the verified 40-character upstream SHA}
+    ports:
+      - "127.0.0.1:8080:8080"
+    privileged: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:false
