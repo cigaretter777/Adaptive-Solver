@@ -50,7 +50,8 @@ def load_source_records(
         return _load_synthetic(spec, sample), None
     dataset_id = str(spec.loader_params["dataset"])
     split = str(spec.loader_params.get("split", "train"))
-    return _load_hf(dataset_id, split, sample)
+    records, resolved = _load_hf(dataset_id, split, sample, spec.revision)
+    return _adapt_records(spec, records), resolved
 
 
 def _load_synthetic(spec: SourceSpec, sample: int | None) -> list[dict[str, Any]]:
@@ -64,13 +65,42 @@ def _load_synthetic(spec: SourceSpec, sample: int | None) -> list[dict[str, Any]
     return records
 
 
-def _load_hf(dataset_id: str, split: str, sample: int | None) -> tuple[list[dict[str, Any]], str | None]:
+def _load_hf(
+    dataset_id: str, split: str, sample: int | None, revision: str
+) -> tuple[list[dict[str, Any]], str | None]:
     from datasets import load_dataset
 
     split_spec = f"{split}[:{sample}]" if sample is not None else split
-    dataset = load_dataset(dataset_id, split=split_spec)
+    dataset = load_dataset(path=dataset_id, split=split_spec, revision=revision)
     resolved: str | None = getattr(getattr(dataset, "info", None), "sha", None)
     return [_to_json(dict(row)) for row in dataset], resolved
+
+
+def _adapt_records(spec: SourceSpec, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize source-specific layouts before generic canonicalization."""
+    if spec.loader != "dapo":
+        return records
+    adapted: list[dict[str, Any]] = []
+    for record in records:
+        prompt = record.get("prompt")
+        reward_model = record.get("reward_model")
+        if not isinstance(prompt, list) or not isinstance(reward_model, dict):
+            adapted.append({})
+            continue
+        messages = [message for message in prompt if isinstance(message, dict)]
+        user_messages = [message for message in messages if message.get("role") == "user"]
+        content = (user_messages or messages)[-1].get("content") if messages else None
+        answer = reward_model.get("ground_truth")
+        extra_info = record.get("extra_info")
+        source_index = extra_info.get("index") if isinstance(extra_info, dict) else None
+        adapted.append(
+            {
+                "problem": content,
+                "answer": answer,
+                "source_index": source_index,
+            }
+        )
+    return adapted
 
 
 def _to_json(value: Any) -> Any:

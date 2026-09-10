@@ -1,0 +1,66 @@
+version: "1.0"
+sources:
+  openr1_math_220k:
+    name: openr1_math_220k
+    uri: https://huggingface.co/datasets/open-r1/OpenR1-Math-220k
+    revision: e4e141ec9dea9f8326f4d347be56105859b2bd68
+    license: apache-2.0
+    intended_use: train
+    citation: "Hugging Face Open R1, OpenR1-Math-220k (2025)."
+    loader: openr1
+    loader_params:
+      dataset: open-r1/OpenR1-Math-220k
+      split: train
+      problem_column: problem
+      solution_column: solution
+      metadata_columns:
+        source: upstream_source
+        problem_type: problem_type
+    answer_type: expression
+  dapo_math_17k:
+    name: dapo_math_17k
+    uri: https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k
+    revision: 65877096c24ffa7abc4e4fa5edb95cf3413a5674
+    license: apache-2.0
+    intended_use: train
+    citation: "Yu et al., DAPO: An Open-Source LLM Reinforcement Learning System at Scale (2025)."
+    loader: dapo
+    loader_params:
+      dataset: BytedTsinghua-SIA/DAPO-Math-17k
+      split: train
+      problem_column: problem
+      answer_column: answer
+      metadata_columns:
+        source_index: source_index
+    answer_type: integer
+  numinamath_tir:
+    name: numinamath_tir
+    uri: https://huggingface.co/datasets/AI-MO/NuminaMath-TIR
+    revision: 77a91d7b7a1a98ac4b1beb7d86c09d156b935dcd
+    license: apache-2.0
+    intended_use: train
+    citation: "Project Numina, NuminaMath-TIR (2024)."
+    loader: numinamath_tir
+    loader_params:
+      dataset: AI-MO/NuminaMath-TIR
+      split: train
+      problem_column: problem
+      solution_column: solution
+    answer_type: expression
+  omni_math:
+    name: omni_math
+    uri: https://huggingface.co/datasets/KbsdJames/Omni-MATH
+    revision: 40ba231d8f16e29ecd40e6407e2c8640145a8f62
+    license: apache-2.0
+    intended_use: eval
+    citation: "Gao et al., Omni-MATH: A Universal Olympiad Level Mathematic Benchmark for Large Language Models (2024)."
+    loader: omnimath
+    loader_params:
+      dataset: KbsdJames/Omni-MATH
+      split: test
+      problem_column: problem
+      answer_column: answer
+      metadata_columns:
+        difficulty: difficulty
+        domain: domain
+    answer_type: expression
