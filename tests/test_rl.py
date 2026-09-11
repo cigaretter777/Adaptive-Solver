@@ -18,7 +18,7 @@ from src.rl import (
 )
 
 
-def test_trajectory_collector():
+def test_trajectory_collector(tmp_path: Path):
     """测试轨迹收集器"""
     print("1. 测试轨迹收集器...")
 
@@ -39,8 +39,9 @@ def test_trajectory_collector():
     print("  [OK] 统计功能")
 
     # 测试保存和加载
-    collector.save_to_file("test_trajectories.json")
-    loaded = TrajectoryCollector.load_from_file("test_trajectories.json")
+    trajectory_path = tmp_path / "test_trajectories.json"
+    collector.save_to_file(str(trajectory_path))
+    loaded = TrajectoryCollector.load_from_file(str(trajectory_path))
     assert len(loaded.trajectories) == 1
     print("  [OK] 保存和加载")
 
