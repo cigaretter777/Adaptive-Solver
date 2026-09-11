@@ -90,3 +90,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["datasets", "datasets.*", "datasketch", "datasketch.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["yaml", "agent_system", "agent_system.*"]
+ignore_missing_imports = true
