@@ -5,7 +5,10 @@ min_gpu_memory_gb: 80
 min_disk_gb: 500
 min_ram_gb: 128
 cuda_base_image: required-at-build-time-as-an-immutable-digest
+cuda_wheel_index: cu128
 python: "3.12"
+torch: "2.8.0"
+vllm: "0.11.0"
 launcher: torchrun
 nproc_per_node: 2
 sandbox_url: http://127.0.0.1:8080

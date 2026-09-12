@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/* && python3.12 -m venv "$VIRTUAL_ENV" \
     && pip install --upgrade pip==25.0.1 setuptools==75.8.0 wheel==0.45.1
 COPY docker/requirements.cuda.lock /tmp/requirements.cuda.lock
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cu124 -r /tmp/requirements.cuda.lock
+RUN pip install --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple -r /tmp/requirements.cuda.lock
 RUN git clone https://github.com/langfengQ/verl-agent.git /opt/verl-agent \
     && git -C /opt/verl-agent checkout "$VERL_AGENT_SHA" \
     && test "$(git -C /opt/verl-agent rev-parse HEAD)" = "$VERL_AGENT_SHA" \

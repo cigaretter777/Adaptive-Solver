@@ -26,7 +26,11 @@ def test_training_image_requires_an_immutable_cuda_base_and_pinned_upstreams() -
     assert "ARG CUDA_BASE_IMAGE" in dockerfile
     assert "FROM ${CUDA_BASE_IMAGE}" in dockerfile
     assert "20bd331bdbc9026a5668e11362178e10ab7400c8" in dockerfile
-    assert "vllm==" in lock
+    assert "cu128" in dockerfile
+    assert "torch==2.8.0" in lock
+    assert "torchvision==0.23.0" in lock
+    assert "torchaudio==2.8.0" in lock
+    assert "vllm==0.11.0" in lock
     assert "flash-attn==" in lock
 
 
