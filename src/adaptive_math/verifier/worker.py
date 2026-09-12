@@ -1,9 +1,10 @@
 """Isolated worker process for symbolic verification.
 
 Untrusted expressions are parsed and compared in a spawned worker process.
-Two independent limits protect the parent:
+Three independent limits protect the parent:
 
-- a per-request CPU timer (SIGPROF) inside the worker interrupts a runaway
+- a bounded startup handshake keeps dependency import out of per-request timing;
+- a per-request CPU timer (SIGPROF) inside the ready worker interrupts a runaway
   comparison and returns a timeout verdict while the worker survives;
 - a parent-side wall-clock deadline kills and replaces the whole worker if
   it stops responding (SIGPROF-blocked C calls, hangs) or crashes.
@@ -28,6 +29,7 @@ Comparator = Callable[[str, str, str], dict[str, object]]
 @dataclass(frozen=True)
 class WorkerConfig:
     timeout_seconds: float = 2.0
+    startup_timeout_seconds: float = 30.0
     memory_mb: int = 512
     cpu_seconds: int = 2
 
@@ -58,10 +60,12 @@ def _with_cpu_limit(
 def _worker_main(
     task_queue: Any,
     result_queue: Any,
+    ready_queue: Any,
     comparator: Comparator,
     config: WorkerConfig,
 ) -> None:
     _apply_limits(config)
+    ready_queue.put(True)
     while True:
         item = task_queue.get()
         if item is None:  # shutdown sentinel
@@ -112,11 +116,13 @@ class SymbolicWorker:
         self._ctx = mp.get_context("spawn")
         self._task_queue: Any = None
         self._result_queue: Any = None
+        self._ready_queue: Any = None
         self._process: Any = None
         self._next_id = 0
 
     def compare(self, prediction: str, reference: str, task_id: str) -> dict[str, object]:
-        self._ensure_worker()
+        if not self._ensure_worker():
+            return _error_verdict("internal_error", "worker failed to become ready")
         request_id = self._next_id
         self._next_id += 1
         self._task_queue.put((request_id, prediction, reference, task_id))
@@ -142,19 +148,40 @@ class SymbolicWorker:
     def close(self) -> None:
         self._shutdown()
 
-    def _ensure_worker(self) -> None:
+    def _ensure_worker(self) -> bool:
         if self._process is not None and self._process.is_alive():
-            return
+            return True
         if self._process is not None:
             self._join_quietly(self._process)
         self._task_queue = self._ctx.Queue()
         self._result_queue = self._ctx.Queue()
+        self._ready_queue = self._ctx.Queue()
         self._process = self._ctx.Process(
             target=_worker_main,
-            args=(self._task_queue, self._result_queue, self._comparator, self._config),
+            args=(
+                self._task_queue,
+                self._result_queue,
+                self._ready_queue,
+                self._comparator,
+                self._config,
+            ),
             daemon=True,
         )
         self._process.start()
+        deadline = time.monotonic() + self._config.startup_timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._restart()
+                return False
+            try:
+                self._ready_queue.get(timeout=min(0.1, remaining))
+            except queue.Empty:
+                if not self._process.is_alive():
+                    self._reset()
+                    return False
+                continue
+            return bool(self._process.is_alive())
 
     def _restart(self) -> None:
         if self._process is not None and self._process.is_alive():

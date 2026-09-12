@@ -28,6 +28,27 @@ def _selective_burner(prediction: str, reference: str, task_id: str) -> dict[str
     return compare_expressions(prediction, reference, task_id)
 
 
+def _immediate_verdict(_prediction: str, _reference: str, _task_id: str) -> dict[str, object]:
+    return {
+        "status": "correct",
+        "reward": 1.0,
+        "normalized_prediction": "x",
+        "normalized_reference": "x",
+        "details": {},
+    }
+
+
+def test_worker_startup_is_not_charged_to_first_request_timeout() -> None:
+    worker = SymbolicWorker(
+        WorkerConfig(timeout_seconds=0.25, startup_timeout_seconds=30.0),
+        comparator=_immediate_verdict,
+    )
+    try:
+        assert worker.compare("x", "x", "first-request")["status"] == "correct"
+    finally:
+        worker.close()
+
+
 def test_worker_timeout_kills_and_replaces() -> None:
     worker = SymbolicWorker(WorkerConfig(timeout_seconds=2.0), comparator=_selective_sleeping)
     try:
