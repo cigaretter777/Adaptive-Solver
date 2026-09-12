@@ -1,0 +1,23 @@
+# Build with a digest: --build-arg CUDA_BASE_IMAGE=nvidia/cuda@sha256:<digest>
+ARG CUDA_BASE_IMAGE
+FROM ${CUDA_BASE_IMAGE}
+
+ARG VERL_AGENT_SHA=20bd331bdbc9026a5668e11362178e10ab7400c8
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 VIRTUAL_ENV=/opt/adaptive-venv PATH=/opt/adaptive-venv/bin:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git python3.12 python3.12-venv python3-pip \
+    && rm -rf /var/lib/apt/lists/* && python3.12 -m venv "$VIRTUAL_ENV" \
+    && pip install --upgrade pip==25.0.1 setuptools==75.8.0 wheel==0.45.1
+COPY docker/requirements.cuda.lock /tmp/requirements.cuda.lock
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cu124 -r /tmp/requirements.cuda.lock
+RUN git clone https://github.com/langfengQ/verl-agent.git /opt/verl-agent \
+    && git -C /opt/verl-agent checkout "$VERL_AGENT_SHA" \
+    && test "$(git -C /opt/verl-agent rev-parse HEAD)" = "$VERL_AGENT_SHA" \
+    && pip install --no-deps -e /opt/verl-agent
+WORKDIR /workspace
+COPY pyproject.toml uv.lock ./
+COPY src ./src
+COPY scripts ./scripts
+COPY configs ./configs
+COPY third_party ./third_party
+RUN pip install --no-deps -e . && python scripts/train/check_backend_contract.py --manifest third_party/manifest.json
+CMD ["bash"]

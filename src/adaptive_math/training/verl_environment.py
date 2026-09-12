@@ -2,14 +2,17 @@
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
 from adaptive_math.agent.environment import OfflineMathEnv
 from adaptive_math.agent.parser import parse_action
+from adaptive_math.agent.trace import Trajectory
 from adaptive_math.core.types import Budget, JSONValue, LabeledMathTask
+from adaptive_math.reward import RewardConfig
 from adaptive_math.tools.registry import ToolRegistry
+from adaptive_math.training.reward_bridge import reward_for_trajectory
 
 if TYPE_CHECKING:
     class _EnvironmentManagerBase:
@@ -42,9 +45,20 @@ class RolloutTransition:
 class MathRolloutManager:
     """Owns isolated OfflineMathEnv instances for synchronous policy groups."""
 
-    def __init__(self, budget: Budget, registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        budget: Budget,
+        registry: ToolRegistry,
+        *,
+        reward_config: RewardConfig | None = None,
+        max_generated_tokens: int = 0,
+    ) -> None:
+        if max_generated_tokens < 0:
+            raise ValueError("max_generated_tokens must be non-negative")
         self._budget = budget
         self._registry = registry
+        self._reward_config = reward_config
+        self._max_generated_tokens = max_generated_tokens
         self._environments: dict[str, OfflineMathEnv] = {}
         self._groups: dict[str, str] = {}
         self._policy_version = ""
@@ -95,6 +109,27 @@ class MathRolloutManager:
                 else None,
                 "verifier_status": evaluation.status.value if evaluation is not None else None,
             }
+            if evaluation is not None and self._reward_config is not None:
+                state = environment.state
+                assert state.termination_reason is not None
+                breakdown = reward_for_trajectory(
+                    Trajectory(
+                        trace_id=environment.trace_id,
+                        task_id=state.task.task_id,
+                        events=state.events,
+                        final_answer=state.final_answer,
+                        termination_reason=state.termination_reason,
+                        usage=state.usage,
+                        runtime_version="verl-agent-adapter-v1",
+                    ),
+                    evaluation,
+                    self._budget,
+                    max_generated_tokens=self._max_generated_tokens,
+                    config=self._reward_config,
+                )
+                reward = breakdown.total
+                info["reward_version"] = breakdown.reward_version
+                info["reward_components"] = cast(JSONValue, breakdown.components)
             return RolloutTransition(
                 env_id=env_id,
                 group_id=self._groups[env_id],
@@ -131,6 +166,9 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
         config: object,
         *,
         policy_version: str,
+        task_lookup: dict[str, LabeledMathTask] | None = None,
+        reward_config: RewardConfig | None = None,
+        max_generated_tokens: int = 0,
     ) -> None:
         try:
             group_size = int(config.env.rollout.n)  # type: ignore[attr-defined]
@@ -138,18 +176,32 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
             raise ValueError("config.env.rollout.n must be a positive group_size") from exc
         if group_size <= 0:
             raise ValueError("config.env.rollout.n must be a positive group_size")
-        if not tasks:
+        if not tasks and not task_lookup:
             raise ValueError("at least one labeled task is required")
         super().__init__(None, lambda actions: (actions, [True] * len(actions)), config)
         self._tasks = tasks
+        self._task_lookup = task_lookup
         self._group_size = group_size
         self._policy_version = policy_version
-        self._manager = MathRolloutManager(budget, registry)
+        self._manager = MathRolloutManager(
+            budget,
+            registry,
+            reward_config=reward_config,
+            max_generated_tokens=max_generated_tokens,
+        )
 
     def reset(self, kwargs: dict[str, object]) -> tuple[dict[str, object], list[dict[str, object]]]:
-        del kwargs
+        tasks = self._tasks
+        if self._task_lookup is not None:
+            from adaptive_math.training.verl_agent_adapter import task_ids_from_reset_kwargs
+
+            task_ids = task_ids_from_reset_kwargs(kwargs, group_size=self._group_size)
+            try:
+                tasks = [self._task_lookup[task_id] for task_id in task_ids]
+            except KeyError as exc:
+                raise ValueError(f"unknown adaptive-math task id {exc.args[0]!r}") from exc
         text = self._manager.reset(
-            self._tasks, group_size=self._group_size, policy_version=self._policy_version
+            tasks, group_size=self._group_size, policy_version=self._policy_version
         )
         return {"text": text, "image": None, "anchor": text.copy()}, [{} for _ in text]
 

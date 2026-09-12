@@ -28,6 +28,32 @@ loss alone. Record the chosen run's resolved_config hash here.
 
 ## Checkpoint gate (before GRPO)
 
+## GRPO entrypoint gate (local, no CUDA backend)
+
+`scripts/train/run_grpo.py` is the only project entrypoint for real GRPO. It
+requires a content-addressed private task pool, verifies the fixed
+`verl-agent` checkout SHA, writes the resolved Hydra config, and delegates
+updates to upstream `recipe.hgpo.main_hgpo.run_ppo`. The fixed upstream has no
+external environment registry; before Ray starts, the entrypoint applies an
+idempotent, marked registration branch that routes only
+`env.env_name=adaptive_math` to `VerlMathEnvironmentManager`.
+
+The checked-in smoke config pins the locally materialized 32-task pool at
+`artifacts/task_pools/rl_smoke.jsonl`; the artifact itself is ignored because
+it contains reference answers. On the cloud machine copy that exact artifact
+before running:
+
+```bash
+uv run python scripts/train/run_grpo.py \
+  --config configs/grpo/qwen3_1_7b_smoke_r0.yaml --dry-run
+torchrun --nproc_per_node=1 scripts/train/run_grpo.py \
+  --config configs/grpo/qwen3_1_7b_smoke_r0.yaml
+```
+
+This is a gate, not a claimed training result: the GPU smoke remains required
+to demonstrate rollout, a real tool call, terminal verification, nonconstant
+GRPO groups, backward/update, LoRA checkpoint, and resume.
+
 - [ ] parse success ≥98% on SFT dev
 - [ ] all four behavior categories present in dev generations
 - [ ] tool observation used after ≥90% of successful tool calls

@@ -1,8 +1,10 @@
+import asyncio
 from types import SimpleNamespace
 
 from adaptive_math.core.types import AnswerType, Budget, LabeledMathTask, MathTask, ReferenceAnswer
+from adaptive_math.reward import RewardConfig
 from adaptive_math.tools.registry import ToolRegistry
-from adaptive_math.training.verl_environment import VerlMathEnvironmentManager
+from adaptive_math.training.verl_environment import MathRolloutManager, VerlMathEnvironmentManager
 
 
 def _task() -> LabeledMathTask:
@@ -58,3 +60,35 @@ def test_verl_manager_rejects_non_grouped_config() -> None:
         assert "group_size" in str(exc)
     else:
         raise AssertionError("expected a non-grouped rollout config to be rejected")
+
+
+def test_math_rollout_uses_versioned_reward_breakdown_at_terminal() -> None:
+    reward = RewardConfig(
+        version="r2-test",
+        variant="r2",
+        tool_weight=0.15,
+        python_weight=0.10,
+        invalid_weight=0.10,
+        invalid_cap=3,
+        token_weight=0.0,
+        clip_min=-1.0,
+        clip_max=1.0,
+    )
+    manager = MathRolloutManager(
+        Budget(max_steps=2, max_tool_calls=1, max_python_seconds=1, max_observation_chars=100),
+        ToolRegistry([]),
+        reward_config=reward,
+    )
+    manager.reset([_task()], group_size=1, policy_version="p1")
+
+    transition = asyncio.run(manager.step(['<final>{"answer":"2"}</final>']))[0]
+
+    assert transition.reward == 1.0
+    assert transition.info["reward_version"] == "r2-test"
+    assert transition.info["reward_components"] == {
+        "correct": 1.0,
+        "invalid_penalty": 0.0,
+        "python_cost": 0.0,
+        "token_cost": 0.0,
+        "tool_cost": 0.0,
+    }

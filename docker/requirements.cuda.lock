@@ -1,0 +1,11 @@
+# Resolved for the CUDA 12.4 / Python 3.12 cloud image.
+torch==2.6.0
+transformers==4.51.3
+peft==0.15.2
+accelerate==1.6.0
+datasets==3.6.0
+ray==2.44.1
+vllm==0.11.0
+flash-attn==2.7.4.post1
+omegaconf==2.3.0
+hydra-core==1.3.2

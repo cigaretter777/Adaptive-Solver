@@ -1,0 +1,13 @@
+schema_version: adaptive-math-cloud-v1
+accelerator: H100
+gpu_count: 2
+min_gpu_memory_gb: 80
+min_disk_gb: 500
+min_ram_gb: 128
+cuda_base_image: required-at-build-time-as-an-immutable-digest
+python: "3.12"
+launcher: torchrun
+nproc_per_node: 2
+sandbox_url: http://127.0.0.1:8080
+checkpoint_keep_last: 3
+artifact_prefix: required-at-launch-time

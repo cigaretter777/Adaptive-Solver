@@ -1,0 +1,19 @@
+schema_version: adaptive-math-grpo-v1
+task_pool_path: artifacts/task_pools/rl_smoke.jsonl
+task_pool_sha256: a9224e3fa6c8c99c26319990a5fc6abcb90751de4a118bc4ee2132ccfe2848c9
+budget_path: configs/agent/default.yaml
+reward_path: configs/reward/r0.yaml
+output_dir: artifacts/runs/grpo_qwen3_1_7b_smoke_r0
+upstream_config_name: hgpo_trainer
+upstream_overrides:
+  - actor_rollout_ref.model.path=Qwen/Qwen3-1.7B
+  - actor_rollout_ref.rollout.n=1
+  - env.rollout.n=4
+  - env.max_steps=6
+  - data.train_batch_size=8
+  - trainer.total_training_steps=2
+  - trainer.n_gpus_per_node=1
+  - trainer.nnodes=1
+  - algorithm.adv_estimator=grpo
+  - algorithm.use_kl_in_reward=false
+  - actor_rollout_ref.actor.use_kl_loss=false

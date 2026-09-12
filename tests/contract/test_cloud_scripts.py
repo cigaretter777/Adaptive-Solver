@@ -1,0 +1,38 @@
+"""Static contracts for scripts that are exercised only on a Linux GPU host."""
+
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).parents[2]
+
+
+def test_cloud_shell_scripts_are_strict_and_support_dry_run() -> None:
+    names = (
+        "preflight.sh",
+        "launch_sft.sh",
+        "launch_grpo.sh",
+        "resume_latest.sh",
+        "sync_artifacts.sh",
+    )
+    for name in names:
+        source = (REPO_ROOT / "scripts" / "cloud" / name).read_text()
+        assert "set -euo pipefail" in source
+        assert "--dry-run" in source
+
+
+def test_training_image_requires_an_immutable_cuda_base_and_pinned_upstreams() -> None:
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.train").read_text()
+    lock = (REPO_ROOT / "docker" / "requirements.cuda.lock").read_text()
+
+    assert "ARG CUDA_BASE_IMAGE" in dockerfile
+    assert "FROM ${CUDA_BASE_IMAGE}" in dockerfile
+    assert "20bd331bdbc9026a5668e11362178e10ab7400c8" in dockerfile
+    assert "vllm==" in lock
+    assert "flash-attn==" in lock
+
+
+def test_runbook_covers_persistence_and_emergency_stop() -> None:
+    runbook = (REPO_ROOT / "docs" / "runbooks" / "cloud-training.md").read_text()
+
+    assert "tmux" in runbook
+    assert "Emergency stop" in runbook
+    assert "SANDBOXFUSION_IMAGE_DIGEST" in runbook

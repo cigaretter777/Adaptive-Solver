@@ -119,18 +119,27 @@ HF pinned revision → sources → canonicalize(+quarantine) → dedup(精确+Mi
   → split(种子) → Parquet×4 + v1.json manifest → audit ✅
   产物：100,804 任务（train 87,620/sft_dev 4,868/rl_dev 4,868/frozen_eval 3,448）
 
-② SFT 管线（代码就绪，数据物化未跑）
-v1 train split → labeled-tasks JSONL
-  → [解答→轨迹转换器 ⬜缺失]（DIRECT：think+FINAL；TIR：代码重放）
+② SFT 管线（本地物化代码就绪，正式数据未跑）
+pinned raw source → build_source_sft（DIRECT：来源解答→think+FINAL；
+  TIR：fenced Python 经生产 ToolRegistry 重放）→ trace JSONL + SFT Parquet
   → teacher_rollout（GPU，RECOVERY/补量 ⬜未跑）
   → build_sft_record → sft_v1.parquet → audit（≥18k 覆盖门禁）
   → run_sft（tokenize+mask → Trainer+LoRA → adapter+COMPLETE）⬜未跑
 
-③ GRPO 管线（桥接件就绪，入口缺失）
+③ GRPO 管线（云端真实入口与固定上游适配器就绪，尚未 GPU smoke）
 rl_dev prompts → MathRolloutManager.reset/step（向量化 OfflineMathEnv）
-  → [run_grpo.py + configs/grpo ⬜缺失 → pinned verl-agent 后端]
-  → 终局 HiddenVerifier → reward_bridge(R0/R2) → group_advantages
+  → run_grpo.py + configs/grpo（输入 SHA 门禁、Hydra resolved config、上游 SHA 校验）
+  → verl_agent_adapter（对固定 checkout 的幂等 `adaptive_math` 环境注册补丁）
+  → pinned verl-agent / Ray actor 后端
+  → 终局 HiddenVerifier → reward_bridge(R0/R2，逐项 reward info) → group_advantages
   → 策略更新（仅 assistant token，mask 已由 rollout_records 保存）
+
+④ 云端可复现层（脚本与运行手册就绪，尚未真实镜像构建）
+
+  immutable CUDA base digest + Dockerfile.train + pinned verl-agent checkout
+  → compose.sandbox.yml（独立 SandboxFusion）
+  → preflight / launch_sft / launch_grpo / resume / artifact sync / health stop
+  → tmux-backed cloud runbook
 ```
 
 ## 5. 关键架构不变量（由契约测试钉死）
@@ -146,7 +155,6 @@ rl_dev prompts → MathRolloutManager.reset/step（向量化 OfflineMathEnv）
 
 | 缺口 | 所属 | 性质 |
 |---|---|---|
-| 解答→轨迹转换器（DIRECT/TIR） | SFT 数据物化 | 本地 CPU 代码 |
 | `run_grpo.py` + `configs/grpo/*` + profiling | Training Task 7 | 本地代码+GPU 门控测试 |
 | 云端脚本/runbook/requirements.cuda.lock（AutoDL 适配） | Training Task 8 | 本地代码 |
 | `evaluation/`（registry/runner/统计/报告） | Phase 4 Task 1–4 | 本地代码 |
