@@ -14,11 +14,25 @@ where the wall-clock and CPU limits still guarantee bounded work.
 """
 
 import multiprocessing as mp
+import os
 import signal
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
+
+# Symbolic verification imports NumPy/SciPy transitively.  Constrain their thread
+# pools before those imports run: each verifier is already isolated in a process,
+# and allowing every worker to create a full CPU-sized pool exhausts constrained
+# cloud containers long before the verifier's own timeout is reached.
+for _thread_env in (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ.setdefault(_thread_env, "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from adaptive_math.verifier.symbolic import compare_expressions
 
@@ -29,7 +43,10 @@ Comparator = Callable[[str, str, str], dict[str, object]]
 class WorkerConfig:
     timeout_seconds: float = 2.0
     startup_timeout_seconds: float = 30.0
-    memory_mb: int = 512
+    # SciPy/SymPy's virtual-memory footprint exceeds 512 MiB during normal
+    # expression parsing.  Keep an explicit ceiling, but give an isolated
+    # verifier enough room to complete real OpenR1 examples.
+    memory_mb: int = 4096
     cpu_seconds: int = 2
 
 

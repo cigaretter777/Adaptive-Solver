@@ -16,6 +16,12 @@ def test_worker_uses_pipe_ipc_without_queue_feeder_threads() -> None:
     assert ".Queue()" not in source
 
 
+def test_default_worker_budget_supports_the_symbolic_runtime() -> None:
+    config = WorkerConfig()
+
+    assert config.memory_mb == 4096
+
+
 def _selective_sleeping(prediction: str, reference: str, task_id: str) -> dict[str, object]:
     if task_id.startswith("sleep"):
         time.sleep(10)
