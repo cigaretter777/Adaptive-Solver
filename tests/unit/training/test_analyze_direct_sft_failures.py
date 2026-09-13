@@ -14,6 +14,8 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 def test_analyzer_reports_outcomes_and_compares_row_level_dispositions(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline.jsonl"
     candidate = tmp_path / "candidate.jsonl"
+    baseline_input = tmp_path / "baseline.source-input.json"
+    candidate_input = tmp_path / "candidate.source-input.json"
     _write_jsonl(
         baseline,
         [
@@ -28,9 +30,29 @@ def test_analyzer_reports_outcomes_and_compares_row_level_dispositions(tmp_path:
             {"source_hash": "b", "task_id": "t2", "outcome": "strict_verifier_incorrect"},
         ],
     )
+    source_input = {
+        "source": "openr1_math_220k",
+        "resolved_revision": "a" * 40,
+        "raw_records_sha256": "b" * 64,
+        "raw_record_count": 2,
+        "mode": "direct",
+    }
+    baseline_input.write_text(json.dumps(source_input))
+    candidate_input.write_text(json.dumps(source_input))
 
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--diagnostics", str(baseline), "--compare", str(candidate)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--diagnostics",
+            str(baseline),
+            "--compare",
+            str(candidate),
+            "--source-input",
+            str(baseline_input),
+            "--compare-source-input",
+            str(candidate_input),
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -43,3 +65,4 @@ def test_analyzer_reports_outcomes_and_compares_row_level_dispositions(tmp_path:
     }
     assert payload["comparison"]["changed_outcomes"] == 1
     assert payload["comparison"]["accepted_task_ids_match"] is True
+    assert payload["source_input_comparison"]["matches"] is True

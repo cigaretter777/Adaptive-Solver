@@ -79,10 +79,31 @@ def _comparison(
     }
 
 
+def _source_input_comparison(baseline_path: Path, candidate_path: Path) -> dict[str, object]:
+    baseline = json.loads(baseline_path.read_text())
+    candidate = json.loads(candidate_path.read_text())
+    fields = (
+        "source",
+        "requested_revision",
+        "resolved_revision",
+        "raw_records_sha256",
+        "raw_record_count",
+        "mode",
+    )
+    differences = {
+        field: {"baseline": baseline.get(field), "candidate": candidate.get(field)}
+        for field in fields
+        if baseline.get(field) != candidate.get(field)
+    }
+    return {"matches": not differences, "differences": differences}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--diagnostics", type=Path, required=True)
     parser.add_argument("--compare", type=Path)
+    parser.add_argument("--source-input", type=Path)
+    parser.add_argument("--compare-source-input", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -90,6 +111,12 @@ def main() -> int:
     payload: dict[str, object] = {"summary": _summary(diagnostics)}
     if args.compare is not None:
         payload["comparison"] = _comparison(diagnostics, _read_jsonl(args.compare))
+    if (args.source_input is None) != (args.compare_source_input is None):
+        parser.error("--source-input and --compare-source-input must be supplied together")
+    if args.source_input is not None and args.compare_source_input is not None:
+        payload["source_input_comparison"] = _source_input_comparison(
+            args.source_input, args.compare_source_input
+        )
     rendered = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
