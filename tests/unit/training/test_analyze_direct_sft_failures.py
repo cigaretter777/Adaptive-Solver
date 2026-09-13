@@ -66,3 +66,7 @@ def test_analyzer_reports_outcomes_and_compares_row_level_dispositions(tmp_path:
     assert payload["comparison"]["changed_outcomes"] == 1
     assert payload["comparison"]["accepted_task_ids_match"] is True
     assert payload["source_input_comparison"]["matches"] is True
+    assert payload["candidate_summary"]["outcomes"] == {
+        "accepted_strict": 1,
+        "strict_verifier_incorrect": 1,
+    }

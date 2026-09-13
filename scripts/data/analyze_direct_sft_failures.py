@@ -110,7 +110,9 @@ def main() -> int:
     diagnostics = _read_jsonl(args.diagnostics)
     payload: dict[str, object] = {"summary": _summary(diagnostics)}
     if args.compare is not None:
-        payload["comparison"] = _comparison(diagnostics, _read_jsonl(args.compare))
+        candidate = _read_jsonl(args.compare)
+        payload["comparison"] = _comparison(diagnostics, candidate)
+        payload["candidate_summary"] = _summary(candidate)
     if (args.source_input is None) != (args.compare_source_input is None):
         parser.error("--source-input and --compare-source-input must be supplied together")
     if args.source_input is not None and args.compare_source_input is not None:
