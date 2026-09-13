@@ -1,0 +1,11 @@
+{
+  "schema_version": "sft-data-v1",
+  "parquet": "data/processed/sft_smoke_1k_answerfix.parquet",
+  "parquet_sha256": "959eec8f35588a1be3910f8c1f98c206d367a9c3fd934c50a29423f0911639c9",
+  "total_records": 184,
+  "behavior_counts": {
+    "direct": 184
+  },
+  "source_task_pool_manifest_sha256": "0d005b152e06bb05c0ae89a261ada46849f121e8d7ed109dbdb0527d20f945fb",
+  "source_trace_sha256": "e80d01dcaf1024f00fb1a97b00c2e8bab3f936e053dfc7a65f5073b567cef944"
+}

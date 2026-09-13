@@ -1,0 +1,11 @@
+{
+  "schema_version": "sft-data-v1",
+  "parquet": "data/processed/sft_diag_1k_conclusion.parquet",
+  "parquet_sha256": "0199828389fd0a91025d29457ac94c00ad5f65721d058371978d9caa7b3987de",
+  "total_records": 280,
+  "behavior_counts": {
+    "direct": 280
+  },
+  "source_task_pool_manifest_sha256": "0d005b152e06bb05c0ae89a261ada46849f121e8d7ed109dbdb0527d20f945fb",
+  "source_trace_sha256": "77536422a30e533339ca1f906306f620c5795018d8fac34eaf8e1f6516d8193c"
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "sft-data-v1",
+  "parquet": "/root/autodl-tmp/Adaptive-Solver-main-git/data/processed/sft_diag_5k_baseline_true.parquet",
+  "parquet_sha256": "35ecabce2da4c0862f0e71b19dee07d933783cfa0bd05dca86112a2969b60125",
+  "total_records": 982,
+  "behavior_counts": {
+    "direct": 982
+  },
+  "source_task_pool_manifest_sha256": "7c83e100c243157eb6d2d88aa85b943e55be736eed709428c036323260b6d29f",
+  "source_trace_sha256": "8e091f12a20806ca32a01fe6a2b644415ebede8fda25cbecdb724b102c012071"
+}
