@@ -41,6 +41,11 @@ _TERMINAL_ASSIGNMENT = re.compile(
     r"(?:\\[a-zA-Z]+(?:\s+[A-Za-z])?|[A-Za-z][A-Za-z0-9_]*)\s*=\s*(?P<rhs>.+?)\s*$",
     re.IGNORECASE,
 )
+_TERMINAL_CONCLUSION_CUE = re.compile(
+    r"\b(?:therefore|hence|thus|consequently|it follows|which means|we obtain|we get|"
+    r"which simplifies to)\b",
+    re.IGNORECASE,
+)
 
 
 class ExtractStatus(StrEnum):
@@ -128,6 +133,12 @@ def extract_terminal_solution_answer(solution: str) -> ExtractResult:
         if value is not None:
             return _ok(value, details={"method": "terminal_assignment"})
         return _missing("terminal assignment has no usable value")
+    for line in reversed(lines):
+        if "=" not in line or _TERMINAL_CONCLUSION_CUE.search(line) is None:
+            continue
+        value = _anchor_value(line.rsplit("=", maxsplit=1)[1])
+        if value is not None:
+            return _ok(value, details={"method": "terminal_conclusion_equation"})
     return _missing("no explicit terminal assignment in bounded tail")
 
 

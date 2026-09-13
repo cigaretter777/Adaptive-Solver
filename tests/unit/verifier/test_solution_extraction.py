@@ -154,6 +154,17 @@ def test_terminal_assignment_fallback_does_not_guess_from_inline_math() -> None:
     assert result.status is ExtractStatus.MISSING
 
 
+def test_terminal_conclusion_equation_uses_the_last_equation_rhs() -> None:
+    result = extract_terminal_solution_answer(
+        "The preceding cases are impossible. Therefore, we have "
+        r"f(\alpha)=f(-1-\beta), which means \alpha + \beta = -1"
+    )
+
+    assert result.status is ExtractStatus.OK
+    assert result.value == "-1"
+    assert result.details == {"method": "terminal_conclusion_equation"}
+
+
 @pytest.mark.parametrize("empty", ["", "   "])
 def test_empty_solutions_are_missing(empty: str) -> None:
     assert extract_solution_answer(empty).status is ExtractStatus.MISSING

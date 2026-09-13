@@ -60,6 +60,33 @@ def test_direct_trace_accepts_a_verifier_correct_terminal_assignment() -> None:
     assert '"answer":"2"' in str(trace.events[-2].payload["raw"])
 
 
+def test_direct_materialization_labels_a_verified_conclusion_equation() -> None:
+    spec = SourceSpec(
+        name="unit_conclusion",
+        uri="file://unit",
+        revision="a" * 40,
+        license="apache-2.0",
+        intended_use="train",
+        citation="unit",
+        loader="synthetic",
+        loader_params={
+            "problem_column": "problem",
+            "answer_column": "answer",
+            "solution_column": "solution",
+        },
+        answer_type=AnswerType.INTEGER,
+    )
+    result = materialize_direct_records(
+        spec,
+        [{"problem": "1+1", "answer": "2", "solution": "Therefore, x + 1 = 2"}],
+        Budget(max_steps=2, max_tool_calls=0, max_python_seconds=0, max_observation_chars=100),
+        ToolRegistry([]),
+    )
+
+    assert len(result.records) == 1
+    assert result.diagnostics[0].outcome == "accepted_terminal_conclusion_equation"
+
+
 def test_direct_trace_does_not_fallback_after_a_semantically_incorrect_strict_answer() -> None:
     with pytest.raises(ValueError, match="verifier-correct"):
         direct_trace_from_solution(_task(), "The answer is \\boxed{3}.\nx = 2")

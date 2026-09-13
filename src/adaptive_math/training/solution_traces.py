@@ -314,6 +314,9 @@ def _classify_direct_solution(labeled_task: LabeledMathTask, solution: str) -> t
         return f"terminal_extract_{fallback.status.value}", str(fallback.details)
     verdict = verify_answer(fallback.value, labeled_task.reference, task_id=labeled_task.task.task_id)
     if verdict.status is VerifierStatus.CORRECT:
+        method = fallback.details.get("method")
+        if isinstance(method, str):
+            return f"accepted_{method}", str(fallback.details)
         return "accepted_terminal", str(fallback.details)
     return f"terminal_verifier_{verdict.status.value}", str(verdict.details)
 
