@@ -165,3 +165,19 @@ def test_atomic_replace_dir_swaps_previous_content(tmp_path: Path) -> None:
     assert not (final / "old.bin").exists()
     assert not staged.exists()
     assert list(tmp_path.glob("*.old")) == []
+
+
+def test_final_metrics_keep_aggregate_and_last_logged_loss_distinct() -> None:
+    row = run_sft.final_metrics_row(
+        {"train_loss": 0.733803628146319},
+        [{"loss": 0.9}, {"loss": 0.8432}, {"train_loss": 0.733803628146319}],
+        records=1447,
+        rejected=0,
+    )
+    assert row == {
+        "event": "final",
+        "train_loss": 0.733803628146319,
+        "last_logged_loss": 0.8432,
+        "records": 1447,
+        "rejected": 0,
+    }

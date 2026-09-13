@@ -241,7 +241,7 @@ def run_training(config: SFTConfig, data_path: Path) -> None:
         model=model, args=args, train_dataset=dataset, data_collator=collator,
         callbacks=[_MetricsCallback()],
     )
-    trainer.train()
+    train_output = trainer.train()
     shutil.rmtree(run_tmp, ignore_errors=True)
 
     adapter_tmp = output_dir / "adapter.tmp"
@@ -253,19 +253,29 @@ def run_training(config: SFTConfig, data_path: Path) -> None:
     )
     atomic_replace_dir(adapter_tmp, output_dir / "adapter")
 
-    final_loss = next(
-        (entry["loss"] for entry in reversed(trainer.state.log_history) if "loss" in entry),
-        None,
+    final_row = final_metrics_row(
+        train_output.metrics,
+        trainer.state.log_history,
+        records=len(tokenized),
+        rejected=len(rejects),
     )
     with metrics_path.open("a") as handle:
-        handle.write(
-            json.dumps(
-                {"event": "final", "train_loss": final_loss, "records": len(tokenized),
-                 "rejected": len(rejects)},
-                sort_keys=True,
-            )
-            + "\n"
-        )
+        handle.write(json.dumps(final_row, sort_keys=True) + "\n")
+
+
+def final_metrics_row(
+    train_metrics: dict[str, object], log_history: list[dict[str, object]], *,
+    records: int, rejected: int,
+) -> dict[str, object]:
+    """Keep Trainer's aggregate loss distinct from its last logged step loss."""
+    last_logged_loss = next(
+        (entry["loss"] for entry in reversed(log_history) if "loss" in entry),
+        None,
+    )
+    return {
+        "event": "final", "train_loss": train_metrics.get("train_loss"),
+        "last_logged_loss": last_logged_loss, "records": records, "rejected": rejected,
+    }
 
 
 def _make_dataset_class(torch_module):
