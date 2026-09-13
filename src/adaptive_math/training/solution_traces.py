@@ -23,6 +23,7 @@ from adaptive_math.verifier import (
     ExtractStatus,
     VerifierStatus,
     extract_solution_answer,
+    extract_terminal_solution_answer,
     verify_answer,
 )
 
@@ -39,21 +40,16 @@ def direct_trace_from_solution(labeled_task: LabeledMathTask, solution: str) -> 
         raise ValueError("source solution is empty")
     if any(tag in reasoning for tag in ("<think>", "</think>", "<tool_call>", "</tool_call>", "<final>", "</final>")):
         raise ValueError("source solution contains a reserved protocol tag")
-    extracted = extract_solution_answer(reasoning)
-    if extracted.status is not ExtractStatus.OK or extracted.value is None:
-        raise ValueError("source solution has no unambiguous terminal answer")
-    verdict = verify_answer(
-        extracted.value, labeled_task.reference, task_id=labeled_task.task.task_id
-    )
-    if verdict.status is not VerifierStatus.CORRECT:
-        raise ValueError("source solution is not verifier-correct")
+    final_answer = _resolve_terminal_solution_answer(labeled_task, reasoning)
+    if final_answer is None:
+        raise ValueError("source solution has no verifier-correct terminal answer")
     raw = (
         f"<think>{reasoning}</think><final>"
-        + orjson.dumps({"answer": extracted.value}).decode()
+        + orjson.dumps({"answer": final_answer}).decode()
         + "</final>"
     )
     parsed = parse_action(raw)
-    if not isinstance(parsed.action, FinalAction) or parsed.action.answer != extracted.value:
+    if not isinstance(parsed.action, FinalAction) or parsed.action.answer != final_answer:
         raise ValueError("constructed DIRECT trace violates the production action protocol")
     return Trajectory(
         trace_id=f"source:{labeled_task.task.source_hash[:20]}",
@@ -69,14 +65,39 @@ def direct_trace_from_solution(labeled_task: LabeledMathTask, solution: str) -> 
                 sequence=1,
                 kind=EventKind.FINAL,
                 monotonic_ms=1,
-                payload={"answer": extracted.value},
+                payload={"answer": final_answer},
             ),
         ),
-        final_answer=extracted.value,
+        final_answer=final_answer,
         termination_reason=TerminationReason.FINAL,
         usage=Usage(steps=1),
         runtime_version="runtime-v1+source-solution-v1",
     )
+
+
+def _resolve_terminal_solution_answer(labeled_task: LabeledMathTask, reasoning: str) -> str | None:
+    """Accept a source terminal only after strict extraction and reference verification.
+
+    A verifier-correct strict result wins. A semantically incorrect strict answer
+    is terminal evidence and must not trigger a search for an earlier matching value.
+    """
+    strict = extract_solution_answer(reasoning)
+    if strict.status is ExtractStatus.OK and strict.value is not None:
+        verdict = verify_answer(strict.value, labeled_task.reference, task_id=labeled_task.task.task_id)
+        if verdict.status is VerifierStatus.CORRECT:
+            return labeled_task.reference.value
+        if verdict.status is not VerifierStatus.INVALID_PREDICTION:
+            return None
+    elif strict.status is not ExtractStatus.MISSING:
+        return None
+
+    fallback = extract_terminal_solution_answer(reasoning)
+    if fallback.status is not ExtractStatus.OK or fallback.value is None:
+        return None
+    verdict = verify_answer(fallback.value, labeled_task.reference, task_id=labeled_task.task.task_id)
+    if verdict.status is VerifierStatus.CORRECT:
+        return labeled_task.reference.value
+    return None
 
 
 @dataclass(frozen=True)

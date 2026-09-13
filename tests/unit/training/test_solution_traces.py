@@ -50,6 +50,21 @@ def test_direct_trace_rejects_solution_whose_extracted_answer_is_incorrect() -> 
         direct_trace_from_solution(_task(), "Adding gives \\boxed{3}.")
 
 
+def test_direct_trace_accepts_a_verifier_correct_terminal_assignment() -> None:
+    trace = direct_trace_from_solution(
+        _task(),
+        "First calculate 1+1.\nx = 2\nTOTAL 2 POINTS",
+    )
+
+    assert trace.final_answer == "2"
+    assert '"answer":"2"' in str(trace.events[-2].payload["raw"])
+
+
+def test_direct_trace_does_not_fallback_after_a_semantically_incorrect_strict_answer() -> None:
+    with pytest.raises(ValueError, match="verifier-correct"):
+        direct_trace_from_solution(_task(), "The answer is \\boxed{3}.\nx = 2")
+
+
 def test_direct_trace_rejects_protocol_tag_in_source_reasoning() -> None:
     with pytest.raises(ValueError, match="protocol tag"):
         direct_trace_from_solution(_task(), "<final>{\"answer\": \"2\"}</final>")

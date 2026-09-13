@@ -12,6 +12,7 @@ sources:
       dataset: open-r1/OpenR1-Math-220k
       split: train
       problem_column: problem
+      answer_column: answer
       solution_column: solution
       metadata_columns:
         source: upstream_source

@@ -26,6 +26,8 @@ from adaptive_math.core.types import JSONValue
 MAX_INPUT_CHARS = 32768
 MAX_NESTING = 64
 SOLUTION_TAIL_WINDOW = 32768
+TERMINAL_TAIL_WINDOW = 4096
+TERMINAL_MAX_NONEMPTY_LINES = 12
 
 _FINAL_OPEN = "<final>"
 _FINAL_CLOSE = "</final>"
@@ -34,6 +36,11 @@ _PROSE_ANCHOR = re.compile(r"(?:final\s+answer|answer)\s*(?:is\s*:?|:)\s*", re.I
 # A math run after an anchor: LaTeX commands, escaped chars, digits and
 # operators. Bare words (e.g. "dollars per item") terminate the run.
 _MATH_RUN = re.compile(r"(?:\\[a-zA-Z]+|\\.|[\d.,+\-*/^=(){}\[\]\s])+")
+_TERMINAL_ASSIGNMENT = re.compile(
+    r"^\s*(?:(?:therefore|hence|so)\s*,?\s*)?"
+    r"(?:\\[a-zA-Z]+(?:\s+[A-Za-z])?|[A-Za-z][A-Za-z0-9_]*)\s*=\s*(?P<rhs>.+?)\s*$",
+    re.IGNORECASE,
+)
 
 
 class ExtractStatus(StrEnum):
@@ -105,6 +112,25 @@ def extract_solution_answer(solution: str) -> ExtractResult:
     return _missing("no boxed group and no usable prose anchor found")
 
 
+def extract_terminal_solution_answer(solution: str) -> ExtractResult:
+    """Extract only the final explicit assignment from a worked-solution tail.
+
+    This fallback deliberately accepts less syntax than ``extract_solution_answer``.
+    It never scans the full solution or picks an earlier verifier-matching value.
+    """
+    tail = solution[-TERMINAL_TAIL_WINDOW:]
+    lines = [line.strip() for line in tail.splitlines() if line.strip()][-TERMINAL_MAX_NONEMPTY_LINES:]
+    for line in reversed(lines):
+        match = _TERMINAL_ASSIGNMENT.match(line)
+        if match is None:
+            continue
+        value = _anchor_value(match.group("rhs"))
+        if value is not None:
+            return _ok(value, details={"method": "terminal_assignment"})
+        return _missing("terminal assignment has no usable value")
+    return _missing("no explicit terminal assignment in bounded tail")
+
+
 def _whole_text_math_span(text: str) -> str | None:
     """Return the content when the ENTIRE text is one $...$ or $$...$$ span.
 
@@ -130,6 +156,9 @@ def _anchor_value(rest: str) -> str | None:
     text = rest.strip()
     if not text:
         return None
+    parenthesized = _balanced_parenthesized_prefix(text)
+    if parenthesized is not None:
+        return parenthesized
     if text.startswith("$"):
         end = text.find("$", 1)
         if end > 1:
@@ -143,7 +172,24 @@ def _anchor_value(rest: str) -> str | None:
     if match is None:
         return None
     value = match.group(0).strip().rstrip(".")
+    if value.endswith("(") and len(value) > 1 and value[-2].isspace():
+        value = value[:-1].rstrip()
     return value or None
+
+
+def _balanced_parenthesized_prefix(text: str) -> str | None:
+    """Return a complete leading parenthesized answer, never an open prose suffix."""
+    if not text.startswith("("):
+        return None
+    depth = 0
+    for index, char in enumerate(text):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[: index + 1]
+    return None
 
 
 def _extract_final_tags(text: str) -> ExtractResult:

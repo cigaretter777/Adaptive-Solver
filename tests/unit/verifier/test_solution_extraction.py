@@ -15,6 +15,7 @@ from adaptive_math.verifier import (
     ExtractResult,
     ExtractStatus,
     extract_solution_answer,
+    extract_terminal_solution_answer,
 )
 
 
@@ -128,6 +129,29 @@ def test_anchor_value_stops_at_sentence_end() -> None:
     solution = "All checks pass. The final answer is 120. This completes the proof."
     result = extract_solution_answer(solution)
     assert result.value == "120"
+
+
+def test_anchor_strips_only_an_explanatory_open_paren_suffix() -> None:
+    result = extract_solution_answer("Answer: 10 (all triples of solutions are counted).")
+    assert result.status is ExtractStatus.OK
+    assert result.value == "10"
+
+
+@pytest.mark.parametrize("solution, expected", [("Answer: (1,2)", "(1,2)"), ("Answer: (B)", "(B)")])
+def test_anchor_preserves_complete_parenthesized_answers(solution: str, expected: str) -> None:
+    assert extract_solution_answer(solution).value == expected
+
+
+def test_terminal_assignment_fallback_uses_the_last_explicit_assignment() -> None:
+    solution = "152 x=38\nx=\\frac{38}{152}\nx=\\frac{1}{4}\nTOTAL 6 POINTS"
+    result = extract_terminal_solution_answer(solution)
+    assert result.status is ExtractStatus.OK
+    assert result.value == r"\frac{1}{4}"
+
+
+def test_terminal_assignment_fallback_does_not_guess_from_inline_math() -> None:
+    result = extract_terminal_solution_answer("We noted x=1 in an earlier calculation, then finish.")
+    assert result.status is ExtractStatus.MISSING
 
 
 @pytest.mark.parametrize("empty", ["", "   "])
