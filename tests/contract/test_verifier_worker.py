@@ -9,6 +9,13 @@ from adaptive_math.verifier.worker import SymbolicWorker, WorkerConfig
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "adversarial_answers.jsonl"
 
 
+def test_worker_uses_pipe_ipc_without_queue_feeder_threads() -> None:
+    source = (Path(__file__).parents[2] / "src" / "adaptive_math" / "verifier" / "worker.py").read_text()
+
+    assert "Pipe(duplex=False)" in source
+    assert ".Queue()" not in source
+
+
 def _selective_sleeping(prediction: str, reference: str, task_id: str) -> dict[str, object]:
     if task_id.startswith("sleep"):
         time.sleep(10)

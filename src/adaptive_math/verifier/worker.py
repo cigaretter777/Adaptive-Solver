@@ -14,7 +14,6 @@ where the wall-clock and CPU limits still guarantee bounded work.
 """
 
 import multiprocessing as mp
-import queue
 import signal
 import time
 from collections.abc import Callable
@@ -58,16 +57,16 @@ def _with_cpu_limit(
 
 
 def _worker_main(
-    task_queue: Any,
-    result_queue: Any,
-    ready_queue: Any,
+    task_receiver: Any,
+    result_sender: Any,
+    ready_sender: Any,
     comparator: Comparator,
     config: WorkerConfig,
 ) -> None:
     _apply_limits(config)
-    ready_queue.put(True)
+    ready_sender.send(True)
     while True:
-        item = task_queue.get()
+        item = task_receiver.recv()
         if item is None:  # shutdown sentinel
             break
         request_id, prediction, reference, task_id = item
@@ -80,7 +79,7 @@ def _worker_main(
                 "internal_error", f"comparator raised {type(exc).__name__}"
             )
         try:
-            result_queue.put((request_id, verdict))
+            result_sender.send((request_id, verdict))
         except Exception:
             break  # parent is gone
 
@@ -114,9 +113,9 @@ class SymbolicWorker:
         self._config = config or WorkerConfig()
         self._comparator = comparator or compare_expressions
         self._ctx = mp.get_context("spawn")
-        self._task_queue: Any = None
-        self._result_queue: Any = None
-        self._ready_queue: Any = None
+        self._task_sender: Any = None
+        self._result_receiver: Any = None
+        self._ready_receiver: Any = None
         self._process: Any = None
         self._next_id = 0
 
@@ -125,7 +124,7 @@ class SymbolicWorker:
             return _error_verdict("internal_error", "worker failed to become ready")
         request_id = self._next_id
         self._next_id += 1
-        self._task_queue.put((request_id, prediction, reference, task_id))
+        self._task_sender.send((request_id, prediction, reference, task_id))
         deadline = time.monotonic() + self._config.timeout_seconds
         while True:
             remaining = deadline - time.monotonic()
@@ -133,14 +132,18 @@ class SymbolicWorker:
                 verdict = _error_verdict("timeout", "worker wall-clock deadline exceeded")
                 self._restart()
                 return verdict
-            try:
-                got_id, payload = self._result_queue.get(timeout=min(0.1, remaining))
-            except queue.Empty:
+            if not self._result_receiver.poll(min(0.1, remaining)):
                 if not self._process.is_alive():
                     verdict = _error_verdict("internal_error", "worker process died")
                     self._reset()
                     return verdict
                 continue
+            try:
+                got_id, payload = self._result_receiver.recv()
+            except EOFError:
+                verdict = _error_verdict("internal_error", "worker process died")
+                self._reset()
+                return verdict
             if got_id != request_id:
                 continue  # stale result from a previous generation
             return cast("dict[str, object]", payload)
@@ -153,15 +156,15 @@ class SymbolicWorker:
             return True
         if self._process is not None:
             self._join_quietly(self._process)
-        self._task_queue = self._ctx.Queue()
-        self._result_queue = self._ctx.Queue()
-        self._ready_queue = self._ctx.Queue()
+        task_receiver, self._task_sender = self._ctx.Pipe(duplex=False)
+        self._result_receiver, result_sender = self._ctx.Pipe(duplex=False)
+        self._ready_receiver, ready_sender = self._ctx.Pipe(duplex=False)
         self._process = self._ctx.Process(
             target=_worker_main,
             args=(
-                self._task_queue,
-                self._result_queue,
-                self._ready_queue,
+                task_receiver,
+                result_sender,
+                ready_sender,
                 self._comparator,
                 self._config,
             ),
@@ -174,13 +177,16 @@ class SymbolicWorker:
             if remaining <= 0:
                 self._restart()
                 return False
-            try:
-                self._ready_queue.get(timeout=min(0.1, remaining))
-            except queue.Empty:
+            if not self._ready_receiver.poll(min(0.1, remaining)):
                 if not self._process.is_alive():
                     self._reset()
                     return False
                 continue
+            try:
+                self._ready_receiver.recv()
+            except EOFError:
+                self._reset()
+                return False
             return bool(self._process.is_alive())
 
     def _restart(self) -> None:
@@ -201,7 +207,7 @@ class SymbolicWorker:
         if self._process is None:
             return
         try:
-            self._task_queue.put(None)
+            self._task_sender.send(None)
         except Exception:
             pass
         self._process.terminate()
