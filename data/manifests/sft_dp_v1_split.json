@@ -1,0 +1,16 @@
+{
+  "dataset_version": "sft-dp-v1",
+  "source": "data/processed/sft_dp_v1_10k.parquet",
+  "seed": 42,
+  "total": 2944,
+  "train": {
+    "count": 2649,
+    "file": "data/processed/sft_dp_v1/train.parquet",
+    "sha256": "c0d8945d1832faccc4b104c00e9bff4465d2a1d3593ee95ff7fc29e6cb11da43"
+  },
+  "validation": {
+    "count": 295,
+    "file": "data/processed/sft_dp_v1/validation.parquet",
+    "sha256": "e4d96749ca37fa81060f04cc05a84aebddcefcff5e315685b7786c8307c73ef9"
+  }
+}

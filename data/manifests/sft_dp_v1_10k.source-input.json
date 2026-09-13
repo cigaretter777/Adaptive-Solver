@@ -1,0 +1,9 @@
+{
+  "mode": "direct",
+  "raw_record_count": 10000,
+  "raw_records_sha256": "969d778943acdc8b5845c02bb1b1f409af9ff22a18270cbffcf8e4cd92f46fa3",
+  "requested_revision": "e4e141ec9dea9f8326f4d347be56105859b2bd68",
+  "resolved_revision": null,
+  "schema_version": "source-sft-input-v1",
+  "source": "openr1_math_220k"
+}
