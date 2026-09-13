@@ -3,7 +3,7 @@
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import orjson
 
@@ -105,6 +105,29 @@ class DirectMaterialization:
     records: tuple[SFTTrajectoryRecord, ...]
     traces: tuple[Trajectory, ...]
     rejected: dict[str, int]
+    diagnostics: tuple["DirectRecordDiagnostic", ...] = ()
+
+
+@dataclass(frozen=True)
+class DirectRecordDiagnostic:
+    """A deterministic disposition for one source row."""
+
+    source_hash: str
+    task_id: str | None
+    outcome: str
+    detail: str
+    source_answer: str | None
+    solution_tail: str | None
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {
+            "source_hash": self.source_hash,
+            "task_id": self.task_id,
+            "outcome": self.outcome,
+            "detail": self.detail,
+            "source_answer": self.source_answer,
+            "solution_tail": self.solution_tail,
+        }
 
 
 def materialize_direct_records(
@@ -119,11 +142,13 @@ def materialize_direct_records(
     solution_column = spec.loader_params.get("solution_column")
     if not isinstance(solution_column, str):
         raise TypeError(f"source {spec.name} has no solution_column for DIRECT materialization")
-    labeled, _ = canonicalize_source(spec, raw_records)
+    labeled, quarantined = canonicalize_source(spec, raw_records)
     labeled_by_source_hash = {item.task.source_hash: item for item in labeled}
+    quarantined_by_source_hash = {item.source_hash: item for item in quarantined}
     records: list[SFTTrajectoryRecord] = []
     traces: list[Trajectory] = []
     rejected: Counter[str] = Counter()
+    diagnostics: list[DirectRecordDiagnostic] = []
     seen_task_ids: set[str] = set()
     for raw_record in sorted(
         raw_records, key=lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False)
@@ -134,14 +159,46 @@ def materialize_direct_records(
         labeled_task = labeled_by_source_hash.get(source_hash)
         if labeled_task is None:
             rejected["canonicalize"] += 1
+            quarantine = quarantined_by_source_hash[source_hash]
+            diagnostics.append(
+                _make_direct_diagnostic(
+                    raw_record,
+                    spec,
+                    source_hash,
+                    None,
+                    f"canonicalize_{quarantine.reason.value}",
+                    quarantine.detail,
+                )
+            )
             continue
         if labeled_task.task.task_id in seen_task_ids:
             rejected["duplicate_task"] += 1
+            diagnostics.append(
+                _make_direct_diagnostic(
+                    raw_record,
+                    spec,
+                    source_hash,
+                    labeled_task.task.task_id,
+                    "duplicate_task",
+                    "same canonical task_id was already retained",
+                )
+            )
             continue
         solution = raw_record.get(solution_column)
         if not isinstance(solution, str):
             rejected["missing_solution"] += 1
+            diagnostics.append(
+                _make_direct_diagnostic(
+                    raw_record,
+                    spec,
+                    source_hash,
+                    labeled_task.task.task_id,
+                    "missing_solution",
+                    "solution column is not a string",
+                )
+            )
             continue
+        outcome, detail = _classify_direct_solution(labeled_task, solution)
         try:
             trace = direct_trace_from_solution(labeled_task, solution)
             record = build_sft_record(
@@ -153,12 +210,35 @@ def materialize_direct_records(
             )
         except ValueError:
             rejected["invalid_solution"] += 1
+            diagnostics.append(
+                _make_direct_diagnostic(
+                    raw_record,
+                    spec,
+                    source_hash,
+                    labeled_task.task.task_id,
+                    outcome,
+                    detail,
+                )
+            )
             continue
         seen_task_ids.add(labeled_task.task.task_id)
         records.append(record)
         traces.append(trace)
+        diagnostics.append(
+            _make_direct_diagnostic(
+                raw_record,
+                spec,
+                source_hash,
+                labeled_task.task.task_id,
+                outcome,
+                detail,
+            )
+        )
     return DirectMaterialization(
-        records=tuple(records), traces=tuple(traces), rejected=dict(sorted(rejected.items()))
+        records=tuple(records),
+        traces=tuple(traces),
+        rejected=dict(sorted(rejected.items())),
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -176,6 +256,7 @@ def materialize_direct_records_batched(
         raise ValueError("batch_size must be positive")
     rejected: Counter[str] = Counter()
     selected: dict[str, tuple[SFTTrajectoryRecord, Trajectory]] = {}
+    diagnostics: list[DirectRecordDiagnostic] = []
     for start in range(0, len(raw_records), batch_size):
         batch = materialize_direct_records(
             spec,
@@ -185,9 +266,19 @@ def materialize_direct_records_batched(
             tokenizer_revision=tokenizer_revision,
         )
         rejected.update(batch.rejected)
+        diagnostics.extend(batch.diagnostics)
         for record, trace in zip(batch.records, batch.traces, strict=True):
             if record.task_id in selected:
                 rejected["duplicate_task"] += 1
+                for index in range(len(diagnostics) - 1, -1, -1):
+                    item = diagnostics[index]
+                    if item.task_id == record.task_id and item.outcome.startswith("accepted_"):
+                        diagnostics[index] = replace(
+                            item,
+                            outcome="duplicate_task",
+                            detail="same canonical task_id was already retained",
+                        )
+                        break
                 continue
             selected[record.task_id] = (record, trace)
     ordered = [selected[task_id] for task_id in sorted(selected)]
@@ -195,6 +286,62 @@ def materialize_direct_records_batched(
         records=tuple(record for record, _ in ordered),
         traces=tuple(trace for _, trace in ordered),
         rejected=dict(sorted(rejected.items())),
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def _classify_direct_solution(labeled_task: LabeledMathTask, solution: str) -> tuple[str, str]:
+    """Explain the existing strict gate without changing its acceptance semantics."""
+    reasoning = solution.strip()
+    if not reasoning:
+        return "source_solution_empty", ""
+    if any(
+        tag in reasoning
+        for tag in ("<think>", "</think>", "<tool_call>", "</tool_call>", "<final>", "</final>")
+    ):
+        return "source_solution_reserved_protocol_tag", "reserved protocol tag"
+    strict = extract_solution_answer(reasoning)
+    if strict.status is ExtractStatus.OK and strict.value is not None:
+        verdict = verify_answer(strict.value, labeled_task.reference, task_id=labeled_task.task.task_id)
+        if verdict.status is VerifierStatus.CORRECT:
+            return "accepted_strict", str(strict.details)
+        if verdict.status is not VerifierStatus.INVALID_PREDICTION:
+            return f"strict_verifier_{verdict.status.value}", str(verdict.details)
+    elif strict.status is not ExtractStatus.MISSING:
+        return f"strict_extract_{strict.status.value}", str(strict.details)
+    fallback = extract_terminal_solution_answer(reasoning)
+    if fallback.status is not ExtractStatus.OK or fallback.value is None:
+        return f"terminal_extract_{fallback.status.value}", str(fallback.details)
+    verdict = verify_answer(fallback.value, labeled_task.reference, task_id=labeled_task.task.task_id)
+    if verdict.status is VerifierStatus.CORRECT:
+        return "accepted_terminal", str(fallback.details)
+    return f"terminal_verifier_{verdict.status.value}", str(verdict.details)
+
+
+def _make_direct_diagnostic(
+    raw_record: dict[str, JSONValue],
+    spec: SourceSpec,
+    source_hash: str,
+    task_id: str | None,
+    outcome: str,
+    detail: str,
+) -> DirectRecordDiagnostic:
+    answer_column = spec.loader_params.get("answer_column")
+    answer = raw_record.get(str(answer_column)) if answer_column is not None else None
+    source_answer = (
+        str(answer)
+        if isinstance(answer, (str, int, float)) and not isinstance(answer, bool)
+        else None
+    )
+    solution_column = spec.loader_params.get("solution_column")
+    solution = raw_record.get(str(solution_column)) if solution_column is not None else None
+    return DirectRecordDiagnostic(
+        source_hash=source_hash,
+        task_id=task_id,
+        outcome=outcome,
+        detail=detail,
+        source_answer=source_answer,
+        solution_tail=solution[-1000:] if isinstance(solution, str) else None,
     )
 
 

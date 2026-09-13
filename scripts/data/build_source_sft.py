@@ -15,6 +15,7 @@ from adaptive_math.tools.sandboxfusion import SandboxFusionClient
 from adaptive_math.training.sft_io import write_records, write_sft_manifest
 from adaptive_math.training.sft_materialization import load_budget_file
 from adaptive_math.training.solution_traces import (
+    DirectRecordDiagnostic,
     materialize_direct_records_batched,
     materialize_python_tir_records,
 )
@@ -23,6 +24,17 @@ from adaptive_math.training.solution_traces import (
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
+def _write_diagnostics(path: Path, diagnostics: tuple[DirectRecordDiagnostic, ...]) -> None:
+    """Write one disposition per source row before enforcing non-empty output."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(
+            json.dumps(item.as_dict(), ensure_ascii=False, sort_keys=True) + "\n"
+            for item in diagnostics
+        )
+    )
 
 
 def main() -> int:
@@ -34,6 +46,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--traces-output", type=Path, required=True)
+    parser.add_argument(
+        "--diagnostics-output",
+        type=Path,
+        default=None,
+        help="optional JSONL: one acceptance/rejection disposition per raw source row",
+    )
     parser.add_argument("--tokenizer-revision", default="unresolved")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1000)
@@ -80,6 +98,8 @@ def main() -> int:
                 tokenizer_revision=args.tokenizer_revision,
             )
         )
+    if args.diagnostics_output is not None:
+        _write_diagnostics(args.diagnostics_output, result.diagnostics)
     if not result.records:
         parser.error("no verifier-correct records were materialized")
     args.traces_output.parent.mkdir(parents=True, exist_ok=True)

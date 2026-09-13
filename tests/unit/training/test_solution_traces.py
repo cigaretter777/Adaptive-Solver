@@ -96,6 +96,44 @@ def test_direct_materialization_canonicalizes_and_builds_a_verified_sft_record()
     assert result.rejected == {}
 
 
+def test_direct_materialization_records_per_row_rejection_diagnostics() -> None:
+    spec = SourceSpec(
+        name="unit_diagnostics",
+        uri="file://unit",
+        revision="a" * 40,
+        license="apache-2.0",
+        intended_use="train",
+        citation="unit",
+        loader="synthetic",
+        loader_params={
+            "problem_column": "problem",
+            "answer_column": "answer",
+            "solution_column": "solution",
+        },
+        answer_type=AnswerType.INTEGER,
+    )
+
+    result = materialize_direct_records(
+        spec,
+        [
+            {"problem": "1+1", "answer": "2", "solution": "Answer: 2"},
+            {"problem": "2+2", "answer": "4", "solution": "The answer is 3"},
+            {"problem": "3+3", "answer": "6", "solution": "The calculation is complete."},
+            {"problem": "", "answer": "7", "solution": "Answer: 7"},
+        ],
+        Budget(max_steps=2, max_tool_calls=0, max_python_seconds=0, max_observation_chars=100),
+        ToolRegistry([]),
+    )
+
+    assert len(result.records) == 1
+    assert {item.outcome for item in result.diagnostics} == {
+        "accepted_strict",
+        "canonicalize_missing_problem",
+        "strict_verifier_incorrect",
+        "terminal_extract_missing",
+    }
+
+
 def test_batched_direct_materialization_keeps_deterministic_unique_records() -> None:
     spec = SourceSpec(
         name="unit_batched",
