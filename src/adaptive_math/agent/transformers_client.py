@@ -49,8 +49,15 @@ class TransformersModelClient:
     def _generate(self, messages: tuple[ChatMessage, ...], config: GenerationConfig) -> ModelTurn:
         payload = [message.model_dump() for message in messages]
         input_ids = self._tokenizer.apply_chat_template(
-            payload, tokenize=True, add_generation_prompt=True, return_tensors="pt"
+            payload,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
         )
+        get_input_embeddings = getattr(self._model, "get_input_embeddings", None)
+        if hasattr(input_ids, "to") and callable(get_input_embeddings):
+            input_device = get_input_embeddings().weight.device
+            input_ids = input_ids.to(input_device)
         prompt_tokens = _token_count(input_ids)
         generated = self._model.generate(
             input_ids,
@@ -61,7 +68,7 @@ class TransformersModelClient:
         )
         sequence = _first_sequence(generated)
         completion = sequence[prompt_tokens:]
-        text = self._tokenizer.decode(completion, skip_special_tokens=False)
+        text = self._tokenizer.decode(completion, skip_special_tokens=True)
         for marker in self._stop_strings:
             text = text.split(marker, 1)[0]
         return ModelTurn(

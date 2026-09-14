@@ -64,3 +64,13 @@ def test_parse_action_never_raises_for_arbitrary_text(raw: str) -> None:
     result = parse_action(raw)
 
     assert result.raw_hash == hashlib.sha256(raw.encode()).hexdigest()
+
+
+def test_parser_allows_whitespace_between_think_and_action() -> None:
+    result = parse_action(
+        '<think>2+2=4</think>\n\n<final>{"answer":"4"}</final>'
+    )
+
+    assert result.error is None
+    assert result.action is not None
+    assert result.reasoning == "2+2=4"

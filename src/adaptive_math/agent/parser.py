@@ -15,6 +15,7 @@ MAX_REASONING_CHARS = 24576
 _ACTION_ADAPTER: TypeAdapter[AgentAction] = TypeAdapter(AgentAction)
 _ENVELOPE = re.compile(
     r"(?:<think>(?P<think>(?:(?!<think>|</think>).)*)</think>)?"
+    r"\s*"
     r"(?:<tool_call>(?P<tool>.*?)</tool_call>|<final>(?P<final>.*?)</final>)",
     re.DOTALL,
 )
