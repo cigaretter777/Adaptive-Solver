@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from numpy import typing as npt
 
 from adaptive_math.agent.environment import OfflineMathEnv
 from adaptive_math.agent.parser import parse_action
@@ -207,7 +208,12 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
 
     def step(
         self, text_actions: list[str]
-    ) -> tuple[dict[str, object], np.ndarray, np.ndarray, list[dict[str, JSONValue]]]:
+    ) -> tuple[
+        dict[str, object],
+        npt.NDArray[np.float32],
+        npt.NDArray[np.bool_],
+        list[dict[str, JSONValue]],
+    ]:
         transitions = asyncio.run(self._manager.step(text_actions))
         infos: list[dict[str, JSONValue]] = []
         for transition in transitions:
@@ -222,7 +228,9 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
             infos,
         )
 
-    def success_evaluator(self, *args: object, **kwargs: object) -> dict[str, np.ndarray]:
+    def success_evaluator(
+        self, *args: object, **kwargs: object
+    ) -> dict[str, npt.NDArray[np.float32]]:
         del args
         total_batch_list = kwargs.get("total_batch_list")
         total_infos = kwargs.get("total_infos")

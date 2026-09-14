@@ -29,7 +29,7 @@ class TransformersModelClient:
         cls, model_id: str, *, device: str = "auto", dtype: str = "auto"
     ) -> "TransformersModelClient":
         try:
-            from transformers import (  # type: ignore[import-not-found]
+            from transformers import (
                 AutoModelForCausalLM,
                 AutoTokenizer,
             )
@@ -37,7 +37,7 @@ class TransformersModelClient:
             raise RuntimeError(
                 "Install the optional cloud runtime dependencies (transformers and torch) to load a model."
             ) from exc
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(model_id)  # type: ignore[no-untyped-call]
         model = AutoModelForCausalLM.from_pretrained(model_id, device_map=device, torch_dtype=dtype)
         return cls(tokenizer, model, model_id=model_id)
 

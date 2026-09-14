@@ -46,13 +46,20 @@ def test_shipped_configs_load_with_immutable_revisions(
     assert config.precision == "bf16"
 
 
-def test_shipped_configs_use_the_placeholder_data_hash() -> None:
-    # training against an unmaterialized SFT dataset must be impossible
+def test_shipped_configs_use_expected_data_hash_policy() -> None:
+    # Template configs stay guarded by a placeholder hash, while the frozen
+    # production dp_v1 config is intentionally bound to a real manifest hash.
+    formal_config = "qwen3_1_7b_dp_v1.yaml"
+
     for path in sorted(CONFIGS.glob("*.yaml")):
         config = run_sft.load_config(path)
-        assert config.data_manifest_sha256 == run_sft.PLACEHOLDER_HASH
-        with pytest.raises(SystemExit):
-            run_sft.main(["--config", str(path), "--dry-run"])
+
+        if path.name == formal_config:
+            assert config.data_manifest_sha256 != run_sft.PLACEHOLDER_HASH
+        else:
+            assert config.data_manifest_sha256 == run_sft.PLACEHOLDER_HASH
+            with pytest.raises(SystemExit):
+                run_sft.main(["--config", str(path), "--dry-run"])
 
 
 def _usable_args(config_path: Path, manifest: Path, *extra: str) -> list[str]:

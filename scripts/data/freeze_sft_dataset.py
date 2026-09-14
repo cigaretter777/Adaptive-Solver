@@ -1,10 +1,9 @@
-import json
 import hashlib
+import json
 import random
 from pathlib import Path
 
 import pandas as pd
-
 
 SEED = 42
 
