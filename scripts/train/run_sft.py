@@ -222,6 +222,7 @@ def run_training(config: SFTConfig, data_path: Path) -> None:
     run_tmp = output_dir / "trainer_tmp"
     args = TrainingArguments(
         output_dir=str(run_tmp),
+        logging_dir=str(output_dir / "tensorboard"),
         num_train_epochs=config.epochs,
         per_device_train_batch_size=config.per_device_batch_size,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
@@ -235,7 +236,7 @@ def run_training(config: SFTConfig, data_path: Path) -> None:
         gradient_checkpointing=config.gradient_checkpointing,
         seed=config.seed,
         data_seed=config.seed,
-        report_to=[],
+        report_to=["tensorboard"],
     )
     trainer = Trainer(
         model=model, args=args, train_dataset=dataset, data_collator=collator,

@@ -6,7 +6,7 @@ import pytest
 
 from adaptive_math.agent.model_client import ModelTurn
 from adaptive_math.core.types import AnswerType, LabeledMathTask, MathTask, ReferenceAnswer
-from adaptive_math.evaluation.model_eval import evaluate_pair, write_artifacts
+from adaptive_math.evaluation.model_eval import EvaluationJournal, evaluate_pair, write_artifacts
 
 
 def task(task_id: str, answer: str) -> LabeledMathTask:
@@ -64,3 +64,42 @@ def test_invalid_answer_is_counted_separately() -> None:
     result = evaluate_pair([task("a", "1")], set(), generate)
     assert result["summary"]["base"]["invalid_prediction"] == 1
     assert result["summary"]["base"]["valid_answer_rate"] == 0.0
+
+
+def test_evaluation_journal_resumes_only_with_the_same_immutable_manifest(tmp_path: Path) -> None:
+    journal = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    journal.append("base", {"task_id": "a", "verifier_status": "correct"})
+
+    resumed = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    assert resumed.rows("base") == [{"task_id": "a", "verifier_status": "correct"}]
+    assert resumed.progress["completed"] == {"base": 1, "sft": 0}
+
+    with pytest.raises(ValueError, match="immutable manifest"):
+        EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "different", "limit": 2})
+
+
+def test_pair_evaluation_reuses_journal_rows_without_regenerating_them(tmp_path: Path) -> None:
+    journal = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    journal.append("base", {
+        "task_id": "a", "dataset": "omni_math", "split": "frozen_eval", "source_hash": "a" * 64,
+        "prediction": "1", "raw_output": '<final>{"answer":"1"}</final>', "extract_status": "ok",
+        "verifier_status": "correct", "prompt_tokens": 1, "output_tokens": 1,
+        "finish_reason": "stop",
+    })
+    calls: list[tuple[str, str]] = []
+
+    def generate(arm: str, item: MathTask, _messages: tuple) -> ModelTurn:
+        calls.append((arm, item.task_id))
+        return ModelTurn(text='<final>{"answer":"2"}</final>', prompt_tokens=1,
+                         generated_tokens=1, finish_reason="stop", model_id=arm)
+
+    result = evaluate_pair(
+        [task("a", "1"), task("b", "2")],
+        set(),
+        generate,
+        initial_predictions={"base": journal.rows("base"), "sft": []},
+        on_prediction=journal.append,
+    )
+
+    assert calls == [("base", "b"), ("sft", "a"), ("sft", "b")]
+    assert [row["task_id"] for row in result["base_predictions"]] == ["a", "b"]

@@ -31,8 +31,74 @@ _DIRECT_BUDGET = Budget(max_steps=1, max_tool_calls=0, max_python_seconds=0,
                         max_observation_chars=1)
 
 
+class EvaluationJournal:
+    """Append-only, manifest-bound progress state for an interruptible evaluation."""
+
+    def __init__(self, directory: Path, immutable_manifest: dict[str, object]) -> None:
+        self.directory = directory
+        self._manifest_path = directory / "run_manifest.json"
+        self._progress_path = directory / "progress.json"
+        if self._manifest_path.exists():
+            stored = json.loads(self._manifest_path.read_text())
+            if stored != immutable_manifest:
+                raise ValueError("evaluation journal immutable manifest does not match")
+        else:
+            directory.mkdir(parents=True, exist_ok=False)
+            _atomic_json(self._manifest_path, immutable_manifest)
+            _atomic_json(self._progress_path, {"completed": {"base": 0, "sft": 0}})
+
+    @property
+    def progress(self) -> dict[str, object]:
+        return cast(dict[str, object], json.loads(self._progress_path.read_text()))
+
+    def rows(self, arm: str) -> list[dict[str, object]]:
+        path = self._rows_path(arm)
+        if not path.exists():
+            return []
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        task_ids = [row.get("task_id") for row in rows]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError(f"evaluation journal has duplicate {arm} task IDs")
+        return cast(list[dict[str, object]], rows)
+
+    def append(self, arm: str, row: dict[str, object]) -> None:
+        task_id = row.get("task_id")
+        if not isinstance(task_id, str) or not task_id:
+            raise TypeError("journal row requires a non-empty task_id")
+        if task_id in {item["task_id"] for item in self.rows(arm)}:
+            raise ValueError(f"evaluation journal already contains {arm}:{task_id}")
+        path = self._rows_path(arm)
+        with path.open("a") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        progress = self.progress
+        completed = progress.get("completed")
+        if not isinstance(completed, dict):
+            raise TypeError("evaluation journal progress is malformed")
+        completed[arm] = len(self.rows(arm))
+        _atomic_json(self._progress_path, progress)
+
+    def _rows_path(self, arm: str) -> Path:
+        if arm not in {"base", "sft"}:
+            raise ValueError(f"unknown evaluation arm: {arm}")
+        return self.directory / f"{arm}_predictions.jsonl"
+
+
+def _atomic_json(path: Path, value: object) -> None:
+    rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(rendered)
+    os.replace(temporary, path)
+
+
 def evaluate_pair(
-    tasks: list[LabeledMathTask], sft_task_ids: set[str], generate: Generator,
+    tasks: list[LabeledMathTask],
+    sft_task_ids: set[str],
+    generate: Generator,
+    *,
+    initial_predictions: dict[str, list[dict[str, object]]] | None = None,
+    on_prediction: Callable[[str, dict[str, object]], None] | None = None,
 ) -> EvalResult:
     """Evaluate both arms on the exact same ordered tasks and public prompts."""
     ordered = sorted(tasks, key=lambda item: item.task.task_id)
@@ -48,10 +114,16 @@ def evaluate_pair(
         item.task.task_id: render_initial_messages(item.public_view(), _DIRECT_BUDGET, ToolRegistry([]))
         for item in ordered
     }
+    initial_predictions = initial_predictions or {"base": [], "sft": []}
     predictions: dict[str, list[dict[str, object]]] = {}
     for arm in ("base", "sft"):
-        rows: list[dict[str, object]] = []
+        existing = initial_predictions.get(arm, [])
+        rows_by_task_id = {str(row["task_id"]): row for row in existing}
+        if len(rows_by_task_id) != len(existing) or not set(rows_by_task_id).issubset(ids):
+            raise ValueError(f"invalid resumed {arm} predictions")
         for item in ordered:
+            if item.task.task_id in rows_by_task_id:
+                continue
             turn = generate(arm, item.public_view(), prompts[item.task.task_id])
             extraction = extract(turn.text)
             verdict = (
@@ -60,15 +132,18 @@ def evaluate_pair(
                 else None
             )
             status = verdict.status.value if verdict else VerifierStatus.INVALID_PREDICTION.value
-            rows.append({
+            row: dict[str, object] = {
                 "task_id": item.task.task_id, "dataset": item.task.dataset,
                 "split": item.task.split, "source_hash": item.task.source_hash,
                 "prediction": extraction.value, "raw_output": turn.text,
                 "extract_status": extraction.status.value, "verifier_status": status,
                 "prompt_tokens": turn.prompt_tokens, "output_tokens": turn.generated_tokens,
                 "finish_reason": turn.finish_reason,
-            })
-        predictions[arm] = rows
+            }
+            rows_by_task_id[item.task.task_id] = row
+            if on_prediction is not None:
+                on_prediction(arm, row)
+        predictions[arm] = [rows_by_task_id[task_id] for task_id in ids]
     comparison = []
     for base, sft in zip(predictions["base"], predictions["sft"], strict=True):
         base_correct = base["verifier_status"] == VerifierStatus.CORRECT.value

@@ -7,6 +7,7 @@ Example: python scripts/eval/run_model_eval.py --sft-parquet DATA --sft-manifest
 
 import argparse
 import json
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ import adaptive_math
 from adaptive_math.agent.model_client import ChatMessage, ModelTurn
 from adaptive_math.core.hashing import sha256_hex
 from adaptive_math.core.types import LabeledMathTask, MathTask
-from adaptive_math.evaluation.model_eval import evaluate_pair, write_artifacts
+from adaptive_math.evaluation.model_eval import EvaluationJournal, evaluate_pair, write_artifacts
 from adaptive_math.training.sft_io import read_records
 from adaptive_math.training.sft_materialization import _labeled_task_from_row
 
@@ -208,12 +209,39 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.output_dir.exists():
         raise FileExistsError(f"evaluation output already exists: {args.output_dir}")
+    journal = EvaluationJournal(
+        args.output_dir.with_name(args.output_dir.name + ".in_progress"), manifest
+    )
+    initial_predictions = {arm: journal.rows(arm) for arm in ("base", "sft")}
     manifest["started_at"] = datetime.now(UTC).isoformat()
     generate = make_generator(args.model_id, args.model_revision, args.tokenizer_revision,
                               args.adapter, args.max_new_tokens)
-    result = evaluate_pair(tasks, sft_ids, generate)
-    manifest["completed_at"] = datetime.now(UTC).isoformat()
-    write_artifacts(args.output_dir, result, manifest)
+    from tqdm.auto import tqdm
+
+    bars = {
+        arm: tqdm(total=len(tasks), initial=len(initial_predictions[arm]), desc=f"eval:{arm}")
+        for arm in ("base", "sft")
+    }
+
+    def checkpoint(arm: str, row: dict[str, object]) -> None:
+        journal.append(arm, row)
+        bars[arm].update(1)
+        bars[arm].set_postfix(task=str(row["task_id"])[-12:])
+
+    try:
+        result = evaluate_pair(
+            tasks,
+            sft_ids,
+            generate,
+            initial_predictions=initial_predictions,
+            on_prediction=checkpoint,
+        )
+        manifest["completed_at"] = datetime.now(UTC).isoformat()
+        write_artifacts(args.output_dir, result, manifest)
+    finally:
+        for bar in bars.values():
+            bar.close()
+    shutil.rmtree(journal.directory, ignore_errors=True)
     print(json.dumps(result["summary"], sort_keys=True))
     return 0
 
