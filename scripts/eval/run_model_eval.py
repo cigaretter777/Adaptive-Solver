@@ -130,7 +130,7 @@ def preflight(
     sft_meta = json.loads(sft_manifest.read_text())
     sft_manifest_hash = sha256_hex(sft_manifest.read_bytes())
     sft_hash = sha256_hex(sft_parquet.read_bytes())
-    if sft_hash != sft_meta["parquet_sha256"]:
+    if sft_hash != (sft_meta.get("parquet_sha256") or sft_meta["train"]["sha256"]):
         raise ValueError("SFT parquet hash does not match SFT manifest")
     table = pq.read_table(eval_parquet)
     if table.num_rows != split["count"]:
@@ -145,7 +145,7 @@ def preflight(
     if any(item.task.dataset != "omni_math" or item.task.split != "frozen_eval" for item in tasks):
         raise ValueError("eval parquet contains non-Omni-MATH frozen_eval rows")
     sft_records = read_records(sft_parquet)
-    if len(sft_records) != sft_meta["total_records"]:
+    if len(sft_records) != (sft_meta.get("total_records") or sft_meta["train"]["count"]):
         raise ValueError("SFT row count does not match SFT manifest")
     sft_ids = {record.task_id for record in sft_records}
     if set(ids) & sft_ids:
@@ -157,8 +157,20 @@ def preflight(
         raise ValueError("adapter COMPLETE marker is missing")
     _validate_training_config(adapter, complete_path, sft_manifest_hash)
     peft_meta = json.loads(adapter_config.read_text())
-    if peft_meta.get("base_model_name_or_path") != model_id:
-        raise ValueError("adapter base model does not match selected model")
+    adapter_base = peft_meta.get("base_model_name_or_path")
+
+    selected_model = model_id
+    if "/models--" in model_id and "/snapshots/" in model_id:
+        encoded = model_id.split("/models--", 1)[1].split("/snapshots/", 1)[0]
+        if "--" in encoded:
+            namespace, repo = encoded.split("--", 1)
+            selected_model = f"{namespace}/{repo}"
+
+    if adapter_base != selected_model:
+        raise ValueError(
+            f"adapter base model does not match selected model: "
+            f"{adapter_base!r} != {selected_model!r}"
+        )
     adapter_hash = sha256_hex(adapter_weights.read_bytes())
     if expected_adapter_sha256 is not None and adapter_hash != expected_adapter_sha256:
         raise ValueError("adapter SHA-256 does not match expected value")
