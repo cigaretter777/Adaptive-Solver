@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "pipeline_version": "33dbfb71658d295391a7f4ab295a4ecd93485877",
-  "seed": 20260910,
+  "pipeline_version": "5518c8bc88480be8102dffb9375244fca67e217a",
+  "seed": 42,
   "sources": {
     "openr1_math_220k": {
       "name": "openr1_math_220k",
@@ -13,8 +13,8 @@
       "citation": "Hugging Face Open R1, OpenR1-Math-220k (2025).",
       "answer_type": "expression",
       "loaded_count": 93733,
-      "kept_count": 21604,
-      "quarantined_count": 72129
+      "kept_count": 71348,
+      "quarantined_count": 22385
     },
     "dapo_math_17k": {
       "name": "dapo_math_17k",
@@ -39,8 +39,8 @@
       "citation": "Project Numina, NuminaMath-TIR (2024).",
       "answer_type": "expression",
       "loaded_count": 72441,
-      "kept_count": 68870,
-      "quarantined_count": 3571
+      "kept_count": 68638,
+      "quarantined_count": 3803
     },
     "omni_math": {
       "name": "omni_math",
@@ -52,43 +52,43 @@
       "citation": "Gao et al., Omni-MATH: A Universal Olympiad Level Mathematic Benchmark for Large Language Models (2024).",
       "answer_type": "expression",
       "loaded_count": 4428,
-      "kept_count": 3472,
-      "quarantined_count": 956
+      "kept_count": 3461,
+      "quarantined_count": 967
     }
   },
   "splits": {
     "train": {
       "name": "train",
       "file": "train.parquet",
-      "count": 87620,
-      "task_ids_hash": "bc18adbb8fc4e0c50b1ac02e28fa94c05798de4336785f35b032775fc1f7eaed",
-      "file_hash": "36761a10be03e99c57f30fd22c619dd82f94bed0271fbe3dcf2605f4307109e1"
+      "count": 129828,
+      "task_ids_hash": "8c07098198a7a1320ab8873f6500942e9376ab233de2af0ae44c8fe4b125d812",
+      "file_hash": "bf4d6d619afb04b0e4138f0ac4fc318ab6b1ca44390f19fb023e233d6531d9d4"
     },
     "sft_dev": {
       "name": "sft_dev",
       "file": "sft_dev.parquet",
-      "count": 4868,
-      "task_ids_hash": "7b2bfdf42364b6abf84e5404df0e3844f914bf48b1b23ae3cc4e2a069c5f45d4",
-      "file_hash": "f3bbc622f03d8e84d1a66aa3784ad9e5b1d55ebff5041987014634c98b4009c5"
+      "count": 7213,
+      "task_ids_hash": "d6b65ae2f0c3aa03ebb761cb0dd1775448355c597ca84e931c98a6effe4da6eb",
+      "file_hash": "9b16d79dc2db62506a9b98bc327bd47f06a5683213adfb258872485c9fc90f77"
     },
     "rl_dev": {
       "name": "rl_dev",
       "file": "rl_dev.parquet",
-      "count": 4868,
-      "task_ids_hash": "914b26d437bf3b15896f42fc489be64d4ef2501c7a7270eacc37ce976d938198",
-      "file_hash": "6cc2aab48d1ff004f1986bb65e137fad20feb11fe8330938927bcc39440c436f"
+      "count": 7212,
+      "task_ids_hash": "9bb7363a031a953073d5af8c26a60f9ff3da194351f3eb3f8cbaa9a57abdb621",
+      "file_hash": "eb1638b625660e148c455f86e5da2a397b486113b314202f8371805559254f58"
     },
     "frozen_eval": {
       "name": "frozen_eval",
       "file": "frozen_eval.parquet",
-      "count": 3448,
-      "task_ids_hash": "e5f621ea937387836e61e84c97769f6f36b00aee1ce2db51809722188284b69b",
-      "file_hash": "bacdcecb75f8c8f765f9fbeaef64617eb0304294ec201dbffd40d333e653bb81"
+      "count": 3438,
+      "task_ids_hash": "5b1612f7ddb1da63611a8ecfdd0b846ec37b51571b1c8d07375023688533613e",
+      "file_hash": "3b3255316c7e57480982e041d5e7172ca63b6052b15f7a5269c9ede574e05c43"
     }
   },
   "dedup": {
-    "exact_removed": 1782412,
-    "near_removed": 2430
+    "exact_removed": 1783184,
+    "near_removed": 4272
   },
-  "quarantine_total": 76656
+  "quarantine_total": 27155
 }
