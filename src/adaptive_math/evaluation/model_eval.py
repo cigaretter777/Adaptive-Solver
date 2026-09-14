@@ -5,10 +5,11 @@ import math
 import os
 import random
 import shutil
+import time
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Protocol, TypedDict, cast, runtime_checkable
 
 from adaptive_math.agent.model_client import ChatMessage, ModelTurn
 from adaptive_math.agent.prompts import PROMPT_VERSION, render_initial_messages
@@ -18,6 +19,24 @@ from adaptive_math.tools.registry import ToolRegistry
 from adaptive_math.verifier import ExtractStatus, VerifierStatus, extract, verify_answer
 
 Generator = Callable[[str, MathTask, tuple[ChatMessage, ...]], ModelTurn]
+
+
+@runtime_checkable
+class BatchGenerator(Protocol):
+    """Optional evaluation generator capability for same-arm prompt batches."""
+
+    def generate_batch(
+        self, arm: str, requests: list[tuple[MathTask, tuple[ChatMessage, ...]]]
+    ) -> list[ModelTurn]: ...
+
+
+@runtime_checkable
+class ResourceReportingGenerator(Protocol):
+    """Optional generator hooks for per-arm accelerator measurements."""
+
+    def start_arm(self, arm: str) -> None: ...
+
+    def resource_metrics(self) -> dict[str, object]: ...
 
 
 class EvalResult(TypedDict):
@@ -95,12 +114,15 @@ def _atomic_json(path: Path, value: object) -> None:
 def evaluate_pair(
     tasks: list[LabeledMathTask],
     sft_task_ids: set[str],
-    generate: Generator,
+    generate: Generator | BatchGenerator,
     *,
+    batch_size: int = 1,
     initial_predictions: dict[str, list[dict[str, object]]] | None = None,
     on_prediction: Callable[[str, dict[str, object]], None] | None = None,
 ) -> EvalResult:
     """Evaluate both arms on the exact same ordered tasks and public prompts."""
+    if batch_size <= 0:
+        raise ValueError("evaluation batch_size must be positive")
     ordered = sorted(tasks, key=lambda item: item.task.task_id)
     ids = [item.task.task_id for item in ordered]
     if not ids or len(ids) != len(set(ids)):
@@ -116,34 +138,36 @@ def evaluate_pair(
     }
     initial_predictions = initial_predictions or {"base": [], "sft": []}
     predictions: dict[str, list[dict[str, object]]] = {}
+    arm_summaries: dict[str, dict[str, object]] = {}
     for arm in ("base", "sft"):
+        if isinstance(generate, ResourceReportingGenerator):
+            generate.start_arm(arm)
         existing = initial_predictions.get(arm, [])
         rows_by_task_id = {str(row["task_id"]): row for row in existing}
         if len(rows_by_task_id) != len(existing) or not set(rows_by_task_id).issubset(ids):
             raise ValueError(f"invalid resumed {arm} predictions")
-        for item in ordered:
-            if item.task.task_id in rows_by_task_id:
-                continue
-            turn = generate(arm, item.public_view(), prompts[item.task.task_id])
-            extraction = extract(turn.text)
-            verdict = (
-                verify_answer(extraction.value, item.reference, task_id=item.task.task_id)
-                if extraction.status is ExtractStatus.OK and extraction.value is not None
-                else None
-            )
-            status = verdict.status.value if verdict else VerifierStatus.INVALID_PREDICTION.value
-            row: dict[str, object] = {
-                "task_id": item.task.task_id, "dataset": item.task.dataset,
-                "split": item.task.split, "source_hash": item.task.source_hash,
-                "prediction": extraction.value, "raw_output": turn.text,
-                "extract_status": extraction.status.value, "verifier_status": status,
-                "prompt_tokens": turn.prompt_tokens, "output_tokens": turn.generated_tokens,
-                "finish_reason": turn.finish_reason,
-            }
-            rows_by_task_id[item.task.task_id] = row
-            if on_prediction is not None:
-                on_prediction(arm, row)
+        pending = [item for item in ordered if item.task.task_id not in rows_by_task_id]
+        for offset in range(0, len(pending), batch_size):
+            batch = pending[offset:offset + batch_size]
+            requests = [(item.public_view(), prompts[item.task.task_id]) for item in batch]
+            started = time.perf_counter()
+            if isinstance(generate, BatchGenerator):
+                turns = generate.generate_batch(arm, requests)
+            else:
+                turns = [generate(arm, item, messages) for item, messages in requests]
+            elapsed_ms = (time.perf_counter() - started) * 1_000
+            if len(turns) != len(batch):
+                raise ValueError(f"generator returned {len(turns)} turns for {len(batch)} requests")
+            batch_id = sha256_hex("\n".join(item.task.task_id for item in batch).encode())
+            for item, turn in zip(batch, turns, strict=True):
+                row = _prediction_row(item, turn, elapsed_ms, len(batch), batch_id)
+                rows_by_task_id[item.task.task_id] = row
+                if on_prediction is not None:
+                    on_prediction(arm, row)
         predictions[arm] = [rows_by_task_id[task_id] for task_id in ids]
+        arm_summaries[arm] = _summarize(predictions[arm])
+        if isinstance(generate, ResourceReportingGenerator):
+            arm_summaries[arm].update(generate.resource_metrics())
     comparison = []
     for base, sft in zip(predictions["base"], predictions["sft"], strict=True):
         base_correct = base["verifier_status"] == VerifierStatus.CORRECT.value
@@ -161,11 +185,33 @@ def evaluate_pair(
         "summary": {
             "task_count": len(ids), "task_ids_sha256": sha256_hex("\n".join(ids).encode()),
             "prompt_version": PROMPT_VERSION,
-            "base": _summarize(predictions["base"]),
-            "sft": _summarize(predictions["sft"]),
+            "base": arm_summaries["base"],
+            "sft": arm_summaries["sft"],
             "paired": dict(Counter(row["outcome"] for row in comparison)),
             **paired_statistics,
         },
+    }
+
+
+def _prediction_row(
+    item: LabeledMathTask, turn: ModelTurn, elapsed_ms: float, batch_size: int, batch_id: str
+) -> dict[str, object]:
+    extraction = extract(turn.text)
+    verdict = (
+        verify_answer(extraction.value, item.reference, task_id=item.task.task_id)
+        if extraction.status is ExtractStatus.OK and extraction.value is not None
+        else None
+    )
+    status = verdict.status.value if verdict else VerifierStatus.INVALID_PREDICTION.value
+    return {
+        "task_id": item.task.task_id, "dataset": item.task.dataset,
+        "split": item.task.split, "source_hash": item.task.source_hash,
+        "prediction": extraction.value, "raw_output": turn.text,
+        "extract_status": extraction.status.value, "verifier_status": status,
+        "prompt_tokens": turn.prompt_tokens, "output_tokens": turn.generated_tokens,
+        "finish_reason": turn.finish_reason,
+        "generation_latency_ms": elapsed_ms, "batch_size": batch_size,
+        "generation_batch_id": batch_id,
     }
 
 
@@ -194,6 +240,15 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
     n = len(rows)
     output_lengths = sorted(cast(int, row["output_tokens"]) for row in rows)
     valid = statuses[VerifierStatus.CORRECT.value] + statuses[VerifierStatus.INCORRECT.value]
+    latencies = [float(latency) for row in rows
+                 if isinstance(latency := row.get("generation_latency_ms"), (int, float))]
+    batch_durations: dict[str, float] = {}
+    for row in rows:
+        batch_id = row.get("generation_batch_id")
+        latency = row.get("generation_latency_ms")
+        if isinstance(batch_id, str) and isinstance(latency, (int, float)):
+            batch_durations[batch_id] = float(latency)
+    elapsed_seconds = sum(batch_durations.values()) / 1_000
     return {
         "total": n, "correct": statuses[VerifierStatus.CORRECT.value],
         "incorrect": statuses[VerifierStatus.INCORRECT.value],
@@ -205,7 +260,23 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
         "valid_answer_rate": valid / n,
         "mean_output_tokens": sum(output_lengths) / n,
         "median_output_tokens": (output_lengths[(n - 1) // 2] + output_lengths[n // 2]) / 2,
+        "p50_generation_latency_ms": _percentile(latencies, 0.5),
+        "p95_generation_latency_ms": _percentile(latencies, 0.95),
+        "generation_elapsed_seconds": elapsed_seconds if batch_durations else None,
+        "tokens_per_second": sum(output_lengths) / elapsed_seconds if elapsed_seconds > 0 else None,
     }
+
+
+def _percentile(values: list[float], quantile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * quantile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
 def write_artifacts(output_dir: Path, result: EvalResult, manifest: dict[str, object]) -> None:
@@ -228,6 +299,9 @@ def write_artifacts(output_dir: Path, result: EvalResult, manifest: dict[str, ob
         summary = json.dumps(result["summary"], ensure_ascii=False, sort_keys=True, indent=2) + "\n"
         (staged / "summary.json").write_text(summary)
         hashes["summary.json"] = sha256_hex(summary.encode())
+        report = _render_evaluation_report(result["summary"])
+        (staged / "evaluation_report.md").write_text(report)
+        hashes["evaluation_report.md"] = sha256_hex(report.encode())
         manifest = {**manifest, "artifact_sha256": hashes,
                     "task_ids_sha256": result["summary"]["task_ids_sha256"]}
         (staged / "eval_manifest.json").write_text(
@@ -238,3 +312,51 @@ def write_artifacts(output_dir: Path, result: EvalResult, manifest: dict[str, ob
     except BaseException:
         shutil.rmtree(staged, ignore_errors=True)
         raise
+
+
+def _render_evaluation_report(summary: dict[str, object]) -> str:
+    """Render a small human-readable companion to the machine-readable summary."""
+    base = cast(dict[str, object], summary["base"])
+    sft = cast(dict[str, object], summary["sft"])
+    paired = cast(dict[str, object], summary["paired"])
+    lines = [
+        "# Paired Base vs SFT Evaluation",
+        "",
+        f"- Tasks: {summary['task_count']}",
+        f"- Prompt version: `{summary['prompt_version']}`",
+        f"- Accuracy delta (SFT − Base): {float(cast(float, summary['accuracy_delta'])):.4f}",
+        f"- Paired bootstrap 95% CI: {summary['paired_bootstrap_ci95']}",
+        f"- McNemar p-value: {float(cast(float, summary['mcnemar_pvalue'])):.6g}",
+        "",
+        "| Arm | Correct | Valid-answer rate | Verifier accuracy | p50 latency (ms) | p95 latency (ms) | Tokens/s | Peak GPU memory |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        _report_arm_row("Base", base),
+        _report_arm_row("SFT", sft),
+        "",
+        "## Paired outcomes",
+        "",
+        f"- Improved: {paired.get('improved', 0)}",
+        f"- Regressed: {paired.get('regressed', 0)}",
+        f"- Unchanged: {paired.get('unchanged', 0)}",
+        "",
+        "Machine-readable provenance and checksums are in `eval_manifest.json`; per-task outputs are JSONL.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _report_arm_row(name: str, arm: dict[str, object]) -> str:
+    def metric(key: str) -> str:
+        value = arm.get(key)
+        return "n/a" if value is None else f"{float(cast(float, value)):.2f}"
+
+    peak_bytes = arm.get("peak_gpu_memory_bytes")
+    peak_memory = "n/a" if peak_bytes is None else f"{int(cast(int, peak_bytes)) / 2**30:.2f} GiB"
+
+    return (
+        f"| {name} | {arm['correct']}/{arm['total']} | "
+        f"{float(cast(float, arm['valid_answer_rate'])):.2%} | "
+        f"{float(cast(float, arm['verifier_accuracy'])):.2%} | "
+        f"{metric('p50_generation_latency_ms')} | {metric('p95_generation_latency_ms')} | "
+        f"{metric('tokens_per_second')} | {peak_memory} |"
+    )

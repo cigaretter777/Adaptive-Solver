@@ -27,15 +27,92 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 
 
+class HFGenerator:
+    """Greedy HF/PEFT generator with a one-item compatibility call and batch API."""
+
+    def __init__(self, model_id: str, tokenizer, model, torch, max_new_tokens: int) -> None:
+        self.model_id = model_id
+        self.tokenizer = tokenizer
+        self.model = model
+        self.torch = torch
+        self.max_new_tokens = max_new_tokens
+        self.device = next(model.parameters()).device
+        self._peak_gpu_memory_bytes: int | None = None
+
+    def __call__(self, arm: str, item: MathTask, messages: tuple[ChatMessage, ...]) -> ModelTurn:
+        return self.generate_batch(arm, [(item, messages)])[0]
+
+    def generate_batch(
+        self, arm: str, requests: list[tuple[MathTask, tuple[ChatMessage, ...]]]
+    ) -> list[ModelTurn]:
+        if not requests:
+            return []
+        if arm not in {"base", "sft"}:
+            raise ValueError(f"unknown evaluation arm: {arm}")
+        rendered = [
+            self.tokenizer.apply_chat_template(
+                [message.model_dump() for message in messages],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            for _item, messages in requests
+        ]
+        encoded = self.tokenizer(
+            rendered, return_tensors="pt", padding=True, return_attention_mask=True,
+        ).to(self.device)
+        input_ids = encoded["input_ids"]
+
+        def produce():
+            with self.torch.inference_mode():
+                return self.model.generate(
+                    **encoded,
+                    max_new_tokens=self.max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+
+        if arm == "base":
+            with self.model.disable_adapter():
+                output = produce()
+        else:
+            output = produce()
+        prompt_width = input_ids.shape[-1]
+        return [
+            ModelTurn(
+                text=self.tokenizer.decode(output[index, prompt_width:], skip_special_tokens=False),
+                prompt_tokens=int(input_ids.shape[-1]),
+                generated_tokens=int(output[index, prompt_width:].shape[-1]),
+                finish_reason="stop",
+                model_id=self.model_id,
+            )
+            for index in range(len(requests))
+        ]
+
+    def start_arm(self, _arm: str) -> None:
+        cuda = getattr(self.torch, "cuda", None)
+        if cuda is None or not cuda.is_available():
+            self._peak_gpu_memory_bytes = None
+            return
+        cuda.reset_peak_memory_stats(self.device)
+        self._peak_gpu_memory_bytes = None
+
+    def resource_metrics(self) -> dict[str, object]:
+        cuda = getattr(self.torch, "cuda", None)
+        if cuda is not None and cuda.is_available():
+            self._peak_gpu_memory_bytes = int(cuda.max_memory_allocated(self.device))
+        return {"peak_gpu_memory_bytes": self._peak_gpu_memory_bytes}
+
+
 def preflight(
     *, eval_parquet: Path, data_manifest: Path, sft_parquet: Path, sft_manifest: Path,
     adapter: Path, limit: int, model_id: str, model_revision: str,
     tokenizer_revision: str, max_new_tokens: int,
+    batch_size: int = 1,
     expected_adapter_sha256: str | None = None,
 ) -> tuple[list[LabeledMathTask], set[str], dict[str, object]]:
     """Validate immutable inputs and leakage before importing the GPU stack."""
-    if limit <= 0 or max_new_tokens <= 0:
-        raise ValueError("limit and max_new_tokens must be positive")
+    if limit <= 0 or max_new_tokens <= 0 or batch_size <= 0:
+        raise ValueError("limit, max_new_tokens and batch_size must be positive")
     imported_package = Path(adaptive_math.__file__).resolve().parent
     expected_package = (ROOT / "src/adaptive_math").resolve()
     if imported_package != expected_package:
@@ -102,7 +179,8 @@ def preflight(
         "data_manifest_sha256": sha256_hex(data_manifest.read_bytes()),
         "sft_parquet_sha256": sft_hash,
         "sft_manifest_sha256": sft_manifest_hash,
-        "generation_config": {"do_sample": False, "max_new_tokens": max_new_tokens},
+        "generation_config": {"do_sample": False, "max_new_tokens": max_new_tokens,
+                              "batch_size": batch_size},
         "verifier_source_sha256": sha256_hex((ROOT / "src/adaptive_math/verifier/service.py").read_bytes()),
         "extractor_source_sha256": sha256_hex((ROOT / "src/adaptive_math/verifier/extractor.py").read_bytes()),
         "prompt_source_sha256": sha256_hex((ROOT / "src/adaptive_math/agent/prompts.py").read_bytes()),
@@ -152,32 +230,7 @@ def make_generator(
     model = PeftModel.from_pretrained(base, str(adapter))
     model.eval()
 
-    def generate(arm: str, _item: MathTask, messages: tuple[ChatMessage, ...]) -> ModelTurn:
-        payload = [message.model_dump() for message in messages]
-        input_ids = tokenizer.apply_chat_template(
-            payload, tokenize=True, add_generation_prompt=True, return_tensors="pt"
-        ).to(next(model.parameters()).device)
-        def produce():
-            with torch.inference_mode():
-                return model.generate(
-                    input_ids, max_new_tokens=max_new_tokens, do_sample=False,
-                    pad_token_id=tokenizer.eos_token_id,
-                )
-        if arm == "base":
-            with model.disable_adapter():
-                output = produce()
-        elif arm == "sft":
-            output = produce()
-        else:
-            raise ValueError(f"unknown evaluation arm: {arm}")
-        completion = output[0, input_ids.shape[-1]:]
-        return ModelTurn(
-            text=tokenizer.decode(completion, skip_special_tokens=False),
-            prompt_tokens=int(input_ids.shape[-1]), generated_tokens=int(completion.shape[-1]),
-            finish_reason="stop", model_id=model_id,
-        )
-
-    return generate
+    return HFGenerator(model_id, tokenizer, model, torch, max_new_tokens)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION)
     parser.add_argument("--tokenizer-revision", default=DEFAULT_MODEL_REVISION)
     parser.add_argument("--max-new-tokens", type=int, default=1024)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--limit", type=int, choices=(200, 500), required=True)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -201,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         sft_parquet=args.sft_parquet, sft_manifest=args.sft_manifest,
         adapter=args.adapter, limit=args.limit, model_id=args.model_id,
         model_revision=args.model_revision, tokenizer_revision=args.tokenizer_revision,
-        max_new_tokens=args.max_new_tokens,
+        max_new_tokens=args.max_new_tokens, batch_size=args.batch_size,
         expected_adapter_sha256=args.expected_adapter_sha256,
     )
     if args.dry_run:
@@ -233,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             tasks,
             sft_ids,
             generate,
+            batch_size=args.batch_size,
             initial_predictions=initial_predictions,
             on_prediction=checkpoint,
         )
