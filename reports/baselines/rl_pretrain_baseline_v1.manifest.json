@@ -1,0 +1,35 @@
+{
+  "adapter_config_sha256": "ca2962bf2d875aa7e0498e858663e5a7d45b240c0d74020faaf5ec8aa7fc3c3e",
+  "adapter_path": "/root/autodl-tmp/Adaptive-Solver-main-git/artifacts/sft/qwen3_1_7b_sft_dp_v1/adapter",
+  "adapter_sha256": "2868f83e9c3bfbe4a0eb6a115575ab4d7fe7cf4357028dcf9c4391c2a71fecaa",
+  "adaptive_math_import_path": "/root/autodl-tmp/Adaptive-Solver-main-git/src/adaptive_math",
+  "artifact_sha256": {
+    "base_predictions.jsonl": "fc3f6c9e8d54354bf95342b39d94f49672c7773fcd9a28f68ea00ddb0221bcdc",
+    "comparison.jsonl": "045cfeeba84a1a074b128c1e365d9bf73bf2d9e1b513bdd586e4f62905097aa5",
+    "evaluation_report.md": "734f0e667b81cdf216064fab36b32e42286204d4fd4ef0577f7f8ee2247543b1",
+    "sft_predictions.jsonl": "12fb1a83053ac9c5afcdc8990f84238e53599b77dfdbefc3128ebe30b6e7b099",
+    "summary.json": "19cbe64db170f1530452b7e9cfbb949bf3f9663969431f5bb42deb52b3ddc166"
+  },
+  "base_model": "/root/autodl-tmp/hf-cache/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "completed_at": "2026-09-14T09:20:36.535940+00:00",
+  "data_manifest_sha256": "908af3c0e65a297df9e5cea9399a70e7c0baabbd6d390abb49b96295834054b6",
+  "eval_dataset": "omni_math",
+  "eval_parquet_sha256": "3b3255316c7e57480982e041d5e7172ca63b6052b15f7a5269c9ede574e05c43",
+  "eval_split": "frozen_eval",
+  "extractor_source_sha256": "029570bd2957e313a74e17ea4b96cf12fc16c2e5b523b329fe18bf1636707581",
+  "generation_config": {
+    "batch_size": 8,
+    "do_sample": false,
+    "max_new_tokens": 1024
+  },
+  "git_sha": "59ed1c21da44a1b6f8559ea538253b35d8e78a2e",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "prompt_source_sha256": "9db23ccfa0863cc5cf6fb3b4e9670ddcc328531532b9d0ff4eb499718ccf7379",
+  "schema_version": "paired-model-eval-v1",
+  "sft_manifest_sha256": "f9cc4c4a41ea7f63e95c9ebe7f6de26ff225fbd6c6d8b144fcb745c78350433b",
+  "sft_parquet_sha256": "c0d8945d1832faccc4b104c00e9bff4465d2a1d3593ee95ff7fc29e6cb11da43",
+  "started_at": "2026-09-14T08:46:20.194305+00:00",
+  "task_ids_sha256": "1fc257f26fbf80ab877223c6bef8b9eda3e8cbfb47bd38b68f4ba6ccddddaee2",
+  "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "verifier_source_sha256": "b690cc7deb03abacb4444cc5485f0aff4e986b1b6ff0907c070359f712503fa7"
+}

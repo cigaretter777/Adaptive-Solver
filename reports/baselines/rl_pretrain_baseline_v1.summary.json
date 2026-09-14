@@ -1,0 +1,54 @@
+{
+  "accuracy_delta": 0.095,
+  "base": {
+    "correct": 7,
+    "generation_elapsed_seconds": 794.2511022868566,
+    "incorrect": 44,
+    "internal_error": 0,
+    "invalid_prediction": 149,
+    "invalid_reference": 0,
+    "mean_output_tokens": 1024.0,
+    "median_output_tokens": 1024.0,
+    "p50_generation_latency_ms": 29965.427931863815,
+    "p95_generation_latency_ms": 39623.34328889847,
+    "peak_gpu_memory_bytes": 4839899136,
+    "timeout": 0,
+    "tokens_per_second": 257.85296288582697,
+    "total": 200,
+    "valid_answer_rate": 0.255,
+    "verifier_accuracy": 0.035
+  },
+  "bootstrap_resamples": 10000,
+  "bootstrap_seed": 20260913,
+  "mcnemar_pvalue": 0.00015652179718017578,
+  "paired": {
+    "improved": 22,
+    "regressed": 3,
+    "unchanged": 175
+  },
+  "paired_bootstrap_ci95": [
+    0.05,
+    0.145
+  ],
+  "prompt_version": "agent-v1",
+  "sft": {
+    "correct": 26,
+    "generation_elapsed_seconds": 1244.4332774952054,
+    "incorrect": 117,
+    "internal_error": 0,
+    "invalid_prediction": 57,
+    "invalid_reference": 0,
+    "mean_output_tokens": 1003.56,
+    "median_output_tokens": 1024.0,
+    "p50_generation_latency_ms": 50651.48495696485,
+    "p95_generation_latency_ms": 56477.2212090902,
+    "peak_gpu_memory_bytes": 4839899136,
+    "timeout": 0,
+    "tokens_per_second": 161.2878758787237,
+    "total": 200,
+    "valid_answer_rate": 0.715,
+    "verifier_accuracy": 0.13
+  },
+  "task_count": 200,
+  "task_ids_sha256": "1fc257f26fbf80ab877223c6bef8b9eda3e8cbfb47bd38b68f4ba6ccddddaee2"
+}
