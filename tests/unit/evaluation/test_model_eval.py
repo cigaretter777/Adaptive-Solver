@@ -6,7 +6,7 @@ import pytest
 
 from adaptive_math.agent.model_client import ModelTurn
 from adaptive_math.core.types import AnswerType, LabeledMathTask, MathTask, ReferenceAnswer
-from adaptive_math.evaluation.model_eval import evaluate_pair, write_artifacts
+from adaptive_math.evaluation.model_eval import EvaluationJournal, evaluate_pair, write_artifacts
 
 
 def task(task_id: str, answer: str) -> LabeledMathTask:
@@ -46,6 +46,10 @@ def test_paired_results_use_same_tasks_and_report_improvement_and_regression(tmp
     write_artifacts(tmp_path / "result", result, {"git_sha": "test"})
     assert (tmp_path / "result" / "COMPLETE").is_file()
     assert len((tmp_path / "result" / "comparison.jsonl").read_text().splitlines()) == 2
+    report = (tmp_path / "result" / "evaluation_report.md").read_text()
+    assert "# Paired Base vs SFT Evaluation" in report
+    assert "Accuracy delta" in report
+    assert "Peak GPU memory" in report
 
 
 def test_overlap_fails_before_any_generation() -> None:
@@ -64,3 +68,91 @@ def test_invalid_answer_is_counted_separately() -> None:
     result = evaluate_pair([task("a", "1")], set(), generate)
     assert result["summary"]["base"]["invalid_prediction"] == 1
     assert result["summary"]["base"]["valid_answer_rate"] == 0.0
+
+
+def test_batch_generator_preserves_task_order_and_records_generation_metrics() -> None:
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    class BatchGenerator:
+        def __call__(self, *_args: object) -> ModelTurn:
+            raise AssertionError("batch-capable generator must not fall back to single-item calls")
+
+        def generate_batch(
+            self,
+            arm: str,
+            requests: list[tuple[MathTask, tuple[object, ...]]],
+        ) -> list[ModelTurn]:
+            calls.append((arm, tuple(item.task_id for item, _messages in requests)))
+            return [
+                ModelTurn(
+                    text=f'<final>{{"answer":"{item.task_id[-1]}"}}</final>',
+                    prompt_tokens=3,
+                    generated_tokens=2,
+                    finish_reason="stop",
+                    model_id=arm,
+                )
+                for item, _messages in requests
+            ]
+
+        def start_arm(self, arm: str) -> None:
+            calls.append(("start", (arm,)))
+
+        def resource_metrics(self) -> dict[str, object]:
+            return {"peak_gpu_memory_bytes": 1234}
+
+    result = evaluate_pair(
+        [task("c", "3"), task("a", "1"), task("b", "2")],
+        set(),
+        BatchGenerator(),
+        batch_size=2,
+    )
+
+    assert calls == [
+        ("start", ("base",)), ("base", ("a", "b")), ("base", ("c",)),
+        ("start", ("sft",)), ("sft", ("a", "b")), ("sft", ("c",)),
+    ]
+    assert [row["task_id"] for row in result["base_predictions"]] == ["a", "b", "c"]
+    assert all(row["batch_size"] in (1, 2) for row in result["base_predictions"])
+    assert all(isinstance(row["generation_latency_ms"], float) for row in result["sft_predictions"])
+    assert result["summary"]["base"]["p50_generation_latency_ms"] >= 0.0
+    assert result["summary"]["sft"]["tokens_per_second"] > 0.0
+    assert result["summary"]["base"]["peak_gpu_memory_bytes"] == 1234
+
+
+def test_evaluation_journal_resumes_only_with_the_same_immutable_manifest(tmp_path: Path) -> None:
+    journal = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    journal.append("base", {"task_id": "a", "verifier_status": "correct"})
+
+    resumed = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    assert resumed.rows("base") == [{"task_id": "a", "verifier_status": "correct"}]
+    assert resumed.progress["completed"] == {"base": 1, "sft": 0}
+
+    with pytest.raises(ValueError, match="immutable manifest"):
+        EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "different", "limit": 2})
+
+
+def test_pair_evaluation_reuses_journal_rows_without_regenerating_them(tmp_path: Path) -> None:
+    journal = EvaluationJournal(tmp_path / "eval.in_progress", {"git_sha": "abc", "limit": 2})
+    journal.append("base", {
+        "task_id": "a", "dataset": "omni_math", "split": "frozen_eval", "source_hash": "a" * 64,
+        "prediction": "1", "raw_output": '<final>{"answer":"1"}</final>', "extract_status": "ok",
+        "verifier_status": "correct", "prompt_tokens": 1, "output_tokens": 1,
+        "finish_reason": "stop",
+    })
+    calls: list[tuple[str, str]] = []
+
+    def generate(arm: str, item: MathTask, _messages: tuple) -> ModelTurn:
+        calls.append((arm, item.task_id))
+        return ModelTurn(text='<final>{"answer":"2"}</final>', prompt_tokens=1,
+                         generated_tokens=1, finish_reason="stop", model_id=arm)
+
+    result = evaluate_pair(
+        [task("a", "1"), task("b", "2")],
+        set(),
+        generate,
+        initial_predictions={"base": journal.rows("base"), "sft": []},
+        on_prediction=journal.append,
+    )
+
+    assert calls == [("base", "b"), ("sft", "a"), ("sft", "b")]
+    assert [row["task_id"] for row in result["base_predictions"]] == ["a", "b"]

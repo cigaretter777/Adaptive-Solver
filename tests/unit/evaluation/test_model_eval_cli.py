@@ -83,12 +83,13 @@ def test_preflight_selects_stable_prefix_and_records_hashes(tmp_path: Path) -> N
         sft_parquet=paths["sft"], sft_manifest=paths["sft_manifest"],
         adapter=paths["adapter"], limit=1,
         model_id="Qwen/Qwen3-1.7B", model_revision="a" * 40,
-        tokenizer_revision="a" * 40, max_new_tokens=1024,
+        tokenizer_revision="a" * 40, max_new_tokens=1024, batch_size=2,
     )
     assert [task.task.task_id for task in tasks] == ["omni_math:1"]
     assert sft_ids == {"openr1:1"}
     assert manifest["adapter_sha256"] == sha256_hex(b"adapter")
     assert manifest["generation_config"]["do_sample"] is False
+    assert manifest["generation_config"]["batch_size"] == 2
 
 
 def test_preflight_rejects_incomplete_adapter(tmp_path: Path) -> None:
@@ -146,18 +147,25 @@ def test_preflight_rejects_eval_hash_mismatch(tmp_path: Path) -> None:
         )
 
 
-def test_generator_disables_adapter_only_for_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_generator_batches_prompts_with_attention_mask_and_disables_adapter_for_base(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
     calls: list[tuple[str, bool]] = []
 
     class Tensor:
-        shape = (1, 2)
+        def __init__(self, shape: tuple[int, ...]) -> None:
+            self.shape = shape
 
         def to(self, _device):
             return self
 
     class Output:
         def __getitem__(self, _index):
-            return types.SimpleNamespace(shape=(3,))
+            return Tensor((3,))
+
+    class BatchEncoding(dict):
+        def to(self, _device):
+            return self
 
     class Tokenizer:
         chat_template = "template"
@@ -165,7 +173,13 @@ def test_generator_disables_adapter_only_for_base(monkeypatch: pytest.MonkeyPatc
 
         def apply_chat_template(self, payload, **_kwargs):
             assert payload[0]["role"] == "user"
-            return Tensor()
+            return payload[0]["content"]
+
+        def __call__(self, prompts, **kwargs):
+            assert prompts in (["1+0", "2+0"], ["1+0"])
+            assert kwargs == {"return_tensors": "pt", "padding": True,
+                              "return_attention_mask": True}
+            return BatchEncoding(input_ids=Tensor((2, 2)), attention_mask=Tensor((2, 2)))
 
         def decode(self, _tokens, **_kwargs):
             return '<final>{"answer":"1"}</final>'
@@ -187,8 +201,9 @@ def test_generator_disables_adapter_only_for_base(monkeypatch: pytest.MonkeyPatc
             finally:
                 self.disabled = False
 
-        def generate(self, _input_ids, **kwargs):
+        def generate(self, **kwargs):
             assert kwargs["do_sample"] is False
+            assert "attention_mask" in kwargs
             calls.append(("generate", self.disabled))
             return Output()
 
@@ -209,7 +224,9 @@ def test_generator_disables_adapter_only_for_base(monkeypatch: pytest.MonkeyPatc
     generate = run_model_eval.make_generator("Qwen/Qwen3-1.7B", "a" * 40, "a" * 40,
                                               tmp_path, 16)
     message = (types.SimpleNamespace(model_dump=lambda: {"role": "user", "content": "1+0"}),)
-    assert generate("base", None, message).text.startswith("<final>")
+    second_message = (types.SimpleNamespace(model_dump=lambda: {"role": "user", "content": "2+0"}),)
+    turns = generate.generate_batch("base", [(None, message), (None, second_message)])
+    assert [turn.text for turn in turns] == ['<final>{"answer":"1"}</final>'] * 2
     assert generate("sft", None, message).text.startswith("<final>")
     assert calls == [("generate", True), ("generate", False)]
 

@@ -23,6 +23,7 @@ runtime = [
   "transformers>=4.51,<5",
   "peft>=0.15,<1",
   "accelerate>=1.0,<2",
+  "tensorboard>=2.17,<3",
 ]
 
 [dependency-groups]
