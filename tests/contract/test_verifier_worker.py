@@ -65,6 +65,9 @@ def test_worker_startup_is_not_charged_to_first_request_timeout() -> None:
 def test_worker_timeout_kills_and_replaces() -> None:
     worker = SymbolicWorker(WorkerConfig(timeout_seconds=2.0), comparator=_selective_sleeping)
     try:
+        # Warm up: startup (spawn + sympy import) is not part of per-request
+        # timing, so the assertions below measure only the timeout behavior.
+        assert worker.compare("x", "x", "warmup")["status"] == "correct"
         start = time.monotonic()
         verdict = worker.compare("x", "x", "sleep-1")
         elapsed = time.monotonic() - start
@@ -79,6 +82,8 @@ def test_worker_timeout_kills_and_replaces() -> None:
 def test_worker_cpu_limit_yields_timeout_without_killing_worker() -> None:
     worker = SymbolicWorker(WorkerConfig(cpu_seconds=0.5), comparator=_selective_burner)
     try:
+        # Warm up so the timing assertion excludes spawn and sympy import.
+        assert worker.compare("x", "x", "warmup")["status"] == "correct"
         start = time.monotonic()
         verdict = worker.compare("x", "x", "burn-1")
         elapsed = time.monotonic() - start
