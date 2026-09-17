@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+import numpy as np
 import yaml
 
 from adaptive_math.core.types import LabeledMathTask
@@ -130,19 +131,31 @@ def _load_reward_file(path: Path) -> RewardConfig:
         raise ValueError(f"cannot load reward file {path}: {exc}") from exc
 
 
-def task_ids_from_reset_kwargs(kwargs: object, *, group_size: int) -> list[str]:
-    """Recover one task id per upstream-repeated rollout group."""
-    if not isinstance(kwargs, dict):
-        raise TypeError("adaptive-math reset requires env_kwargs with task_ids")
-    values = kwargs.get("task_ids")
-    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
-        raise TypeError("adaptive-math env_kwargs.task_ids must be a list of strings")
-    if not values or len(values) % group_size:
-        raise ValueError("task_ids must contain a non-empty whole number of rollout groups")
+def task_ids_from_reset_kwargs(kwargs: object) -> list[str]:
+    """Recover one task id per upstream env_kwargs row.
+
+    Upstream passes the dataset ``env_kwargs`` column as one entry per
+    gen-batch row (a numpy object array of per-row dicts after
+    ``DataProto.repeat``).  Each row dict carries a ``task_ids`` value that
+    repeats one id for its rollout group; the row's task is that id.  The
+    environment creates one env per row, so no group expansion happens here.
+    """
+    if not isinstance(kwargs, (list, np.ndarray)):
+        raise TypeError(
+            "adaptive-math reset requires env_kwargs as a sequence of per-row "
+            "dicts, each with a 'task_ids' entry"
+        )
     ids: list[str] = []
-    for start in range(0, len(values), group_size):
-        group = values[start : start + group_size]
-        if len(set(group)) != 1:
-            raise ValueError("each GRPO group must repeat exactly one task id")
-        ids.append(cast(str, group[0]))
+    for number, row in enumerate(kwargs):
+        if not isinstance(row, dict):
+            raise TypeError(f"adaptive-math env_kwargs row {number} must be a dict")
+        values = row.get("task_ids")
+        if not isinstance(values, (list, np.ndarray, tuple)) or len(values) == 0:
+            raise TypeError(f"adaptive-math env_kwargs row {number} lacks a non-empty 'task_ids' entry")
+        flat = values.tolist() if isinstance(values, np.ndarray) else list(values)
+        if not all(isinstance(value, str) for value in flat):
+            raise TypeError(f"adaptive-math env_kwargs row {number} 'task_ids' must be strings")
+        if len(set(flat)) != 1:
+            raise ValueError(f"adaptive-math env_kwargs row {number} 'task_ids' must repeat one task id")
+        ids.append(flat[0])
     return ids

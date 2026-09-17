@@ -1,19 +1,34 @@
 schema_version: adaptive-math-grpo-v1
 task_pool_path: artifacts/task_pools/rl_smoke.jsonl
-task_pool_sha256: a9224e3fa6c8c99c26319990a5fc6abcb90751de4a118bc4ee2132ccfe2848c9
+task_pool_sha256: a91dd8b8fcc6912048d5a56bbf04d6dfa930344ba7a28c35990a79463bc71581
 budget_path: configs/agent/default.yaml
 reward_path: configs/reward/r0.yaml
 output_dir: artifacts/runs/grpo_qwen3_1_7b_smoke_r0
 upstream_config_name: hgpo_trainer
 upstream_overrides:
-  - actor_rollout_ref.model.path=Qwen/Qwen3-1.7B
+  - actor_rollout_ref.model.path=/root/autodl-tmp/Adaptive-Solver-main-git/artifacts/models/qwen3_1_7b_sft_dp_v1_merged
+  - actor_rollout_ref.model.enable_gradient_checkpointing=True
   - actor_rollout_ref.rollout.n=1
+  - actor_rollout_ref.rollout.tensor_model_parallel_size=1
+  - actor_rollout_ref.actor.ppo_mini_batch_size=8
+  - actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1
+  - actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1
   - env.rollout.n=4
   - env.max_steps=6
+  - data.train_files=/root/autodl-tmp/Adaptive-Solver-main-git/artifacts/task_pools/rl_smoke_10x4_seed42.parquet
+  - data.val_files=/root/autodl-tmp/Adaptive-Solver-main-git/artifacts/task_pools/rl_smoke_10x4_seed42.parquet
   - data.train_batch_size=8
+  - data.return_raw_chat=true
+  - data.max_prompt_length=2048
   - trainer.total_training_steps=2
   - trainer.n_gpus_per_node=1
   - trainer.nnodes=1
+  - trainer.project_name=adaptive_math_grpo_smoke
+  - trainer.experiment_name=qwen3_1_7b_smoke_r0
+  - trainer.default_local_dir=/root/autodl-tmp/Adaptive-Solver-main-git/artifacts/runs/grpo_qwen3_1_7b_smoke_r0/checkpoints
+  - trainer.save_freq=1
+  - trainer.test_freq=-1
+  - trainer.val_before_train=false
   - algorithm.adv_estimator=grpo
   - algorithm.use_kl_in_reward=false
   - actor_rollout_ref.actor.use_kl_loss=false

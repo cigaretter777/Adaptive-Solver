@@ -13,6 +13,10 @@ from adaptive_math.tools.base import ToolContext, ToolErrorCode, ToolResult
 MAX_EXPR_CHARS = 8192
 MAX_NESTING = 64
 MAX_POWER = 10000
+# Child-process deadline.  Spawn must re-import sympy from scratch; on a
+# loaded shared host that can take several seconds, so keep this generous
+# enough that a correct calculation is never misreported as a timeout.
+WORKER_TIMEOUT_SECONDS = 10.0
 _OPERATIONS = Literal["simplify", "factor", "expand", "solve", "diff", "integrate", "numeric"]
 _IDENTIFIER = re.compile(r"\b[A-Za-z_]\w*\b")
 _POWER = re.compile(r"\^\s*(\d+)")
@@ -45,11 +49,11 @@ def _run_isolated(arguments: SympyArguments) -> ToolResult:
     result_queue = ctx.Queue()
     process = ctx.Process(target=_worker, args=(arguments.model_dump(), result_queue), daemon=True)
     process.start()
-    process.join(3.0)
+    process.join(WORKER_TIMEOUT_SECONDS)
     if process.is_alive():
         process.terminate()
         process.join()
-        return ToolResult(ok=False, output="", error_code=ToolErrorCode.TIMEOUT, latency_ms=3000)
+        return ToolResult(ok=False, output="", error_code=ToolErrorCode.TIMEOUT, latency_ms=int(WORKER_TIMEOUT_SECONDS * 1000))
     try:
         # The child may have exited just before its queue feeder flushes.  A
         # tiny bounded wait avoids turning a successful calculation into a

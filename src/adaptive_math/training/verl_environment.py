@@ -7,8 +7,11 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy import typing as npt
 
+from adaptive_math.agent.actions import ToolAction
 from adaptive_math.agent.environment import OfflineMathEnv
+from adaptive_math.agent.model_client import ChatMessage
 from adaptive_math.agent.parser import parse_action
+from adaptive_math.agent.prompts import render_initial_messages, render_observation
 from adaptive_math.agent.trace import Trajectory
 from adaptive_math.core.types import Budget, JSONValue, LabeledMathTask
 from adaptive_math.reward import RewardConfig
@@ -44,7 +47,13 @@ class RolloutTransition:
 
 
 class MathRolloutManager:
-    """Owns isolated OfflineMathEnv instances for synchronous policy groups."""
+    """Owns isolated OfflineMathEnv instances for synchronous policy groups.
+
+    The upstream collector is fixed-width: it generates one action per batch
+    row on every step and requires one reward/done/observation per row in
+    return.  Terminated environments therefore stay in the batch as no-op
+    rows that repeat their terminal info and last observation.
+    """
 
     def __init__(
         self,
@@ -62,6 +71,9 @@ class MathRolloutManager:
         self._max_generated_tokens = max_generated_tokens
         self._environments: dict[str, OfflineMathEnv] = {}
         self._groups: dict[str, str] = {}
+        self._conversations: dict[str, list[ChatMessage]] = {}
+        self._last_observations: dict[str, str | None] = {}
+        self._terminal_infos: dict[str, dict[str, JSONValue]] = {}
         self._policy_version = ""
         self._step_index = 0
 
@@ -74,32 +86,55 @@ class MathRolloutManager:
             raise ValueError("policy_version is required")
         self._environments = {}
         self._groups = {}
+        self._conversations = {}
+        self._last_observations = {}
+        self._terminal_infos = {}
         self._policy_version = policy_version
         self._step_index = 0
         observations: list[str] = []
         for task in tasks:
             for sample_index in range(group_size):
-                env_id = f"{task.task.task_id}:{sample_index}"
-                self._environments[env_id] = OfflineMathEnv(
+                base = f"{task.task.task_id}:{sample_index}"
+                env_id = base
+                # The upstream collector repeats rows of the same task within
+                # one batch (GRPO groups), so a bare task:sample id can collide.
+                suffix = 2
+                while env_id in self._environments:
+                    env_id = f"{base}:{suffix}"
+                    suffix += 1
+                environment = OfflineMathEnv(
                     task, self._budget, self._registry, trace_id=f"rollout:{env_id}"
                 )
+                self._environments[env_id] = environment
                 self._groups[env_id] = task.task.task_id
-                observations.append(task.task.problem)
+                self._conversations[env_id] = list(
+                    render_initial_messages(environment.state.task, self._budget, self._registry)
+                )
+                observations.append(self._render_conversation(env_id))
         return observations
 
     async def step(self, text_actions: list[str]) -> list[RolloutTransition]:
-        active = [
-            (env_id, environment)
-            for env_id, environment in self._environments.items()
-            if environment.state.termination_reason is None
-        ]
-        if len(text_actions) != len(active):
-            raise ValueError("text_actions must have one entry for each active environment")
+        if len(text_actions) != len(self._environments):
+            raise ValueError("text_actions must have one entry for each environment")
         self._step_index += 1
 
         async def one(env_id: str, environment: OfflineMathEnv, text: str) -> RolloutTransition:
+            if environment.state.termination_reason is not None:
+                # Fixed-width contract: terminated rows accept a no-op action
+                # and keep repeating their terminal info and last observation.
+                return RolloutTransition(
+                    env_id=env_id,
+                    group_id=self._groups[env_id],
+                    policy_version=self._policy_version,
+                    observation=self._last_observations[env_id],
+                    reward=0.0,
+                    done=True,
+                    info=self._terminal_infos[env_id],
+                )
             environment.record_model_output(text, generated_tokens=0, monotonic_ms=self._step_index)
-            result = await environment.step(parse_action(text).action, self._step_index)
+            self._conversations[env_id].append(ChatMessage(role="assistant", content=text))
+            parsed = parse_action(text)
+            result = await environment.step(parsed.action, self._step_index)
             evaluation = environment.evaluate() if result.terminated else None
             reward = evaluation.reward if evaluation is not None else 0.0
             info: dict[str, JSONValue] = {
@@ -109,6 +144,9 @@ class MathRolloutManager:
                 if result.state.termination_reason is not None
                 else None,
                 "verifier_status": evaluation.status.value if evaluation is not None else None,
+                "won": float(reward > 0.0),
+                "is_action_valid": parsed.error is None,
+                "tool_calling": 1.0 if isinstance(parsed.action, ToolAction) else 0.0,
             }
             if evaluation is not None and self._reward_config is not None:
                 state = environment.state
@@ -131,24 +169,42 @@ class MathRolloutManager:
                 reward = breakdown.total
                 info["reward_version"] = breakdown.reward_version
                 info["reward_components"] = cast(JSONValue, breakdown.components)
+            observation = result.observation.content if result.observation is not None else None
+            if observation is not None:
+                self._conversations[env_id].append(render_observation(observation))
+            self._last_observations[env_id] = observation
+            if result.terminated:
+                self._terminal_infos[env_id] = dict(info)
             return RolloutTransition(
                 env_id=env_id,
                 group_id=self._groups[env_id],
                 policy_version=self._policy_version,
-                observation=result.observation.content if result.observation is not None else None,
+                observation=observation,
                 reward=reward,
                 done=result.terminated,
                 info=info,
             )
 
-        return list(await asyncio.gather(*(one(env_id, environment, text) for (env_id, environment), text in zip(active, text_actions, strict=True))))
+        return list(await asyncio.gather(*(one(env_id, environment, text) for (env_id, environment), text in zip(self._environments.items(), text_actions, strict=True))))
 
     def build_text_obs(self) -> list[str]:
-        return [
-            environment.state.task.problem
-            for environment in self._environments.values()
-            if environment.state.termination_reason is None
-        ]
+        """Full per-environment turn context, one entry per batch row.
+
+        Terminated environments repeat their final context so the upstream
+        fixed-width loop can keep indexing every row.
+        """
+        return [self._render_conversation(env_id) for env_id in self._environments]
+
+    def _render_conversation(self, env_id: str) -> str:
+        blocks: list[str] = []
+        for message in self._conversations[env_id]:
+            if message.role == "assistant":
+                blocks.append(f"Assistant:\n{message.content}")
+            elif message.role == "tool":
+                blocks.append(f"Observation:\n{message.content}")
+            else:
+                blocks.append(message.content)
+        return "\n\n".join(blocks)
 
 
 class VerlMathEnvironmentManager(_EnvironmentManagerBase):
@@ -191,19 +247,19 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
             max_generated_tokens=max_generated_tokens,
         )
 
-    def reset(self, kwargs: dict[str, object]) -> tuple[dict[str, object], list[dict[str, object]]]:
+    def reset(self, kwargs: object) -> tuple[dict[str, object], list[dict[str, object]]]:
         tasks = self._tasks
         if self._task_lookup is not None:
             from adaptive_math.training.verl_agent_adapter import task_ids_from_reset_kwargs
 
-            task_ids = task_ids_from_reset_kwargs(kwargs, group_size=self._group_size)
+            task_ids = task_ids_from_reset_kwargs(kwargs)
             try:
                 tasks = [self._task_lookup[task_id] for task_id in task_ids]
             except KeyError as exc:
                 raise ValueError(f"unknown adaptive-math task id {exc.args[0]!r}") from exc
-        text = self._manager.reset(
-            tasks, group_size=self._group_size, policy_version=self._policy_version
-        )
+        # One environment per gen-batch row: GRPO groups are the upstream
+        # collector's uid blocks, never an environment-side expansion.
+        text = self._manager.reset(tasks, group_size=1, policy_version=self._policy_version)
         return {"text": text, "image": None, "anchor": text.copy()}, [{} for _ in text]
 
     def step(
@@ -218,8 +274,8 @@ class VerlMathEnvironmentManager(_EnvironmentManagerBase):
         infos: list[dict[str, JSONValue]] = []
         for transition in transitions:
             info = dict(transition.info)
-            info["won"] = float(transition.reward > 0.0)
-            info["is_action_valid"] = True
+            info.setdefault("won", float(transition.reward > 0.0))
+            info.setdefault("is_action_valid", True)
             infos.append(info)
         return (
             {"text": self._manager.build_text_obs(), "image": None, "anchor": None},
