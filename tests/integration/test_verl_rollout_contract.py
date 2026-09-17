@@ -122,14 +122,12 @@ class _RecordingEnv:
 def test_upstream_collector_runs_adaptive_math_rollout(tmp_path: Path) -> None:
     """2 prompts x group 2 with heterogeneous termination and a wrong answer."""
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    import torch
+    from agent_system.multi_turn_rollout import TrajectoryCollector
     from omegaconf import OmegaConf
     from torch.utils.data import DataLoader
     from transformers import AutoTokenizer
     from verl import DataProto
     from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
-
-    from agent_system.multi_turn_rollout import TrajectoryCollector
 
     tokenizer = AutoTokenizer.from_pretrained(str(TOKENIZER_DIR), local_files_only=True)
     if tokenizer.pad_token_id is None:
