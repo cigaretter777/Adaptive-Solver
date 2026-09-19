@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# R2 rollout-health diagnostic watchdog (2026-09-19): relaunches the
-# tool_call=0 diagnosis run if it dies, exits when COMPLETE appears.
-# Run detached: setsid nohup ... &
+# R2 rollout-health diagnostic watchdog (2026-09-19): waits for the GPU to be
+# attached, then launches the tool_call=0 diagnosis run; relaunches on death;
+# exits when COMPLETE appears. Run detached: setsid nohup ... &
 set -u
 REPO=/root/autodl-tmp/Adaptive-Solver-main-git
 PY=/root/autodl-tmp/conda-envs/adaptive-math/bin/python
@@ -33,8 +33,12 @@ while :; do
         echo "$(date -u +%H:%M:%SZ) watchdog: COMPLETE marker found, exiting" >> "$LOG"
         exit 0
     fi
+    if ! nvidia-smi >/dev/null 2>&1; then
+        sleep 120
+        continue
+    fi
     if ! pgrep -f "[r]un_rollout_health.py.*r2_diag_10x4" >/dev/null; then
-        echo "$(date -u +%H:%M:%SZ) watchdog: rollout-health not running, (re)launching" >> "$LOG"
+        echo "$(date -u +%H:%M:%SZ) watchdog: GPU up, rollout-health not running, launching" >> "$LOG"
         launch
     fi
     sleep 120
