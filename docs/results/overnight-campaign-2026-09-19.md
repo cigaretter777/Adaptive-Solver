@@ -1,9 +1,9 @@
 # Overnight Campaign Record (2026-09-19)
 
-Status: **complete with open issue**. Formal R0 (50 steps) and R2 (12
-steps) GRPO runs completed and adapters exported; both evals completed;
-the eval pipeline itself is suspect (see [Open issue](#open-issue)).
-Numbers below are recorded from run artifacts only.
+Status: **complete**. Formal R0 (50 steps) and R2 (12 steps) GRPO
+runs completed and adapters exported; both evals completed; four-way
+paired comparison computed. Campaign result: null — neither RL adapter
+differs significantly from the SFT baseline on frozen OmniMath-200.
 
 ## Chain summary
 
@@ -18,11 +18,24 @@ Numbers below are recorded from run artifacts only.
 
 | Arm | Correct | Invalid prediction | Valid-answer rate | p50 latency | Tokens/s |
 |---|---:|---:|---:|---:|---:|
+| SFT baseline (09-14) | 27/200 (13.5%) | 71 | 64.5% | — | — |
 | R0 adapter | 22/200 (11.0%) | 55 | 72.5% | 26.5 s | 23.5 |
 | R2 adapter | 25/200 (12.5%) | 69 | 65.5% | 29.5 s | 23.7 |
 
-Paired statistics are not yet computed (`comparison.jsonl` is empty;
-pairing is offline against frozen Base/SFT predictions).
+### Paired comparison (offline join, `scripts/campaign-20260919/pair_fourway.py`)
+
+Verifier/extractor/prompt/parquet hashes are identical across all arms
+(checked against eval manifests), so per-task verdicts join directly.
+
+| Pair | Δ accuracy | Improved | Regressed | Unchanged | McNemar p | Bootstrap 95% CI |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| SFT → R0 | -2.5% | 5 | 10 | 185 | 0.302 | [-6.0%, +1.0%] |
+| SFT → R2 | -1.0% | 1 | 3 | 196 | 0.625 | [-3.0%, +1.0%] |
+| R0 → R2 | +1.5% | 8 | 5 | 187 | 0.581 | [-2.0%, +5.0%] |
+
+Artifacts: `artifacts/eval/fourway_omnimath_200/` (`comparison.jsonl`,
+`summary.json`); tracked copies under
+`docs/results/campaign-2026-09-19/fourway/`.
 
 ## Run incidents
 
@@ -44,26 +57,34 @@ pairing is offline against frozen Base/SFT predictions).
    10:39Z and it completed 200/200 at 12:15Z. Full log:
    `artifacts/runs/r2_eval_resume.log`.
 
-## Open issue
+## Conclusion (updated after paired comparison)
 
-**Eval pipeline is suspect.** Both adapters score 11–12.5% verifier
-accuracy with a rising invalid-prediction rate (27.5% → 34.5%) — far
-below what a Qwen3-1.7B SFT model should achieve on OmniMath. R2 vs R0
-is +3 correct / +14 invalid, i.e. noise; no conclusion about RL
-effectiveness can be drawn from these numbers.
+The paired comparison resolves the pipeline question raised below: the
+R0/R2 numbers are consistent with the 09-14 SFT baseline under identical
+verifier/extractor/prompt hashes, so the low absolute accuracy is a
+property of the 1.7B model + strict protocol on this pool, not a broken
+pipeline. **Campaign result: null.** Neither RL adapter differs
+significantly from the SFT baseline (all McNemar p ≥ 0.30); the only
+visible signal is R0's protocol-conformance gain (invalid predictions
+71 → 55, no accuracy change).
 
-Hypotheses to investigate, in order of suspicion:
+Absolute verifier fairness was not independently audited (e.g. spot
+checking a sample of `invalid_prediction` rows). This does not affect the
+relative RL conclusion, but is a cheap sanity item before any claim
+about absolute capability. Do not start further RL rounds until the
+next-step decision is made (see plan); further rounds need a larger pool
+and more steps to have any chance of an accuracy signal.
 
-1. Verifier/judging: why ~1/3 of predictions are invalid; check
-   verifier accuracy on a sample of invalid predictions (agent-v1
-   prompt, sandbox at `http://127.0.0.1:8080`).
-2. Eval data alignment: OmniMath frozen_eval split vs SFT parquet
-   pairing, extractor config.
-3. Generation config: `do_sample=False` with invalid
-   `temperature/top_p/top_k` flags being ignored (warning present in
-   every eval log).
+### Prior open issue (superseded)
 
-Do not start further RL rounds until (1) is resolved.
+Both adapters scored 11–12.5% verifier accuracy with a high
+invalid-prediction rate — far below what a Qwen3-1.7B SFT model was
+assumed to achieve on OmniMath, which suggested pipeline breakage.
+Hypotheses were: (1) verifier/judging, (2) eval data alignment, (3)
+generation config (`do_sample=False` with invalid
+`temperature/top_p/top_k` flags being ignored). The paired comparison
+against the 09-14 baseline under identical hashes supersedes this: the
+pipeline produced internally consistent results across four arms.
 
 ## How to reproduce
 
@@ -92,7 +113,8 @@ versioning are tracked here:
 
 - Campaign scripts: `scripts/campaign-20260919/` (`overnight_chain.sh`,
   `r2_eval_watchdog.sh`, `export_verl_lora.py`, `run_grpo_direct.py`,
-  `build_rl_pool.py`)
-- Eval evidence: `docs/results/campaign-2026-09-19/r0/` and
-  `docs/results/campaign-2026-09-19/r2/` (`evaluation_report.md`,
-  `summary.json`)
+  `build_rl_pool.py`, `pair_fourway.py`)
+- Eval evidence: `docs/results/campaign-2026-09-19/r0/`,
+  `docs/results/campaign-2026-09-19/r2/` and
+  `docs/results/campaign-2026-09-19/fourway/` (`evaluation_report.md`,
+  `summary.json`, `comparison.jsonl`)

@@ -3,8 +3,12 @@
 Status: **in progress** (low-cost route per
 [decision 0001](../decisions/0001-low-cost-training-route.md)).
 GPU host is live since 2026-09-19; environment self-check passed;
-overfit-smoke gate **PASS** (2026-09-19). LR pilots pending the formal
-SFT data-route decision (see notes in the project memory).
+overfit-smoke gate **PASS** (2026-09-19). Formal-SFT data route resolved
+to **dp_v1 direct** (user decision 2026-09-19), superseding the LR
+pilots below. R0/R2 GRPO campaign ran to completion on the dp_v1 merged
+base; result is a null (no significant accuracy change, all arms
+statistically indistinguishable) — see
+[overnight-campaign-2026-09-19.md](overnight-campaign-2026-09-19.md).
 
 This file records SFT pilot results and the formal learning-rate selection
 with their evidence, as required by Training Plan Task 4. Numbers are
@@ -16,9 +20,9 @@ filled in from expectation.
 | Run | Config | LR | Data | Loss first→last | Protocol validity | Verdict |
 |---|---|---|---|---|---|---|
 | overfit-smoke | qwen3_1_7b_smoke.yaml (epochs=12, calibrated) | 2e-5 | 200 synthetic DIRECT | 8.71 → 0.0003 | gate pass ≥98% (50 prompts); 10/10 exact spot-check | **PASS 2026-09-19** |
-| pilot-lr-5e-6 | qwen3_1_7b_lora.yaml --set learning_rate=5e-6 | 5e-6 | sft_v1 | pending | pending | pending |
-| pilot-lr-1e-5 | qwen3_1_7b_lora.yaml | 1e-5 | sft_v1 | pending | pending | pending |
-| pilot-lr-2e-5 | qwen3_1_7b_lora.yaml --set learning_rate=2e-5 | 2e-5 | sft_v1 | pending | pending | pending |
+| pilot-lr-5e-6 | qwen3_1_7b_lora.yaml --set learning_rate=5e-6 | 5e-6 | sft_v1 | — | — | superseded (dp_v1 direct, 2026-09-19) |
+| pilot-lr-1e-5 | qwen3_1_7b_lora.yaml | 1e-5 | sft_v1 | — | — | superseded (dp_v1 direct, 2026-09-19) |
+| pilot-lr-2e-5 | qwen3_1_7b_lora.yaml --set learning_rate=2e-5 | 2e-5 | sft_v1 | — | — | superseded (dp_v1 direct, 2026-09-19) |
 
 ## Formal LR selection
 
@@ -26,8 +30,9 @@ Selection rule (fixed before running, per plan): choose on SFT-dev loss,
 protocol validity (≥98%) and the frozen mini-eval — **not** on training
 loss alone. Record the chosen run's resolved_config hash here.
 
-- Selected LR: pending
-- Evidence: pending (metrics.jsonl + eval artifacts links)
+- Selected LR: n/a — dp_v1 direct route (no formal SFT retraining run)
+- Evidence: existing dp_v1 model reused as GRPO base
+  (`artifacts/models/qwen3_1_7b_sft_dp_v1_merged`)
 
 ## Checkpoint gate (before GRPO)
 
@@ -64,9 +69,10 @@ notes below). Evidence: `artifacts/runs/repro-main-entry3.log` +
 with `actor/` adapters and `latest_checkpointed_iteration.txt`.
 
 - [x] rollout: 32 trajectories × up to 6 env steps (episode/length mean 4.1)
-- [ ] real tool call: NOT demonstrated — `episode/tool_call_count/mean: 0.0`;
-      R0 reward has tool_weight=0 and no sandbox URL is configured. Deferred
-      to the R2 run once `ADAPTIVE_MATH_SANDBOX_URL` is provided.
+- [ ] real tool call: NOT demonstrated — smoke `episode/tool_call_count/mean: 0.0`.
+      The formal R2 run (12 steps, tool_weight=0.15, sandbox reachable and
+      verified) also recorded tool_call_count=0.0 throughout training: the
+      model never discovered tool value in 12 steps (see the campaign doc).
 - [x] terminal verification: symbolic verifier rewards flowed
       (episode/reward mean 0.031, max 1.0)
 - [x] nonconstant GRPO groups: advantages mean -0.274, max 4.695, min -0.667
