@@ -84,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.7,
     )
     parser.add_argument(
+        "--adapter",
+        type=Path,
+        default=None,
+        help="optional PEFT adapter directory to wrap the base model",
+    )
+    parser.add_argument(
         "--device",
         default="auto",
     )
@@ -185,6 +191,7 @@ async def run(args: argparse.Namespace) -> Path:
         "status": "running",
         "data": str(data_path),
         "model": str(model_path),
+        "adapter": str(args.adapter) if args.adapter is not None else None,
         "agent_config": str(agent_config_path),
         "reward_config": str(reward_config_path),
         "task_count": args.task_count,
@@ -239,10 +246,13 @@ async def run(args: argparse.Namespace) -> Path:
 
         print(f"[rollout-health] loading model: {model_path}", flush=True)
 
+        if args.adapter is not None:
+            _require_dir(args.adapter)
         model = TransformersModelClient.from_pretrained(
             str(model_path),
             device=args.device,
             dtype=args.dtype,
+            adapter=str(args.adapter) if args.adapter is not None else None,
         )
 
         sandbox = SandboxFusionClient()
